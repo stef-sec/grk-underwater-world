@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="grk-underwater-world.vcxproj" Id="f94b159a-538d-4e2e-9c30-9ae8579ed69a" />
+</Solution>
