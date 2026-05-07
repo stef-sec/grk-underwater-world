@@ -67,3 +67,10 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.db
+*.opendb
