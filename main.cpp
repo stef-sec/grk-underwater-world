@@ -180,7 +180,7 @@ static float fbm(float x, float y) {
 static float terrainBaseHeight(float x, float z) {
 	float n = fbm(x * 0.8f, z * 0.8f);
 	float ridge = std::pow(std::fabs(0.5f - valueNoise(x * 1.9f, z * 1.9f)), 1.4f);
-	return -8.0f + n * 5.0f + ridge * 2.0f;
+	return -8.0f + n * 3.0f + ridge * 0.6f;
 }
 
 static float terrainHeight(float x, float z, float time) {
