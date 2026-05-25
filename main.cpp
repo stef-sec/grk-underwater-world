@@ -7,14 +7,14 @@
 #include <string>
 #include <vector>
 
+#include "terrain.h"
+
 #pragma comment(lib, "opengl32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "user32.lib")
 
 static constexpr int kWidth = 1280;
 static constexpr int kHeight = 720;
-static constexpr float kTerrainWidth = 60.0f;
-static constexpr float kTerrainDepth = 48.0f;
 static constexpr float kCameraClearance = 0.6f;
 static constexpr float kMoveSpeed = 9.0f;
 static constexpr float kVerticalSpeed = 6.0f;
@@ -41,55 +41,55 @@ static constexpr GLenum kGL_COLOR_BUFFER_BIT = 0x00004000;
 static constexpr GLenum kGL_DEPTH_BUFFER_BIT = 0x00000100;
 static constexpr GLenum kGL_DEPTH_TEST = 0x0B71;
 
-using PFNGLCREATESHADERPROC = GLuint(__stdcall *)(GLenum);
-using PFNGLSHADERSOURCEPROC = void(__stdcall *)(GLuint, GLsizei, const GLchar *const *, const GLint *);
-using PFNGLCOMPILESHADERPROC = void(__stdcall *)(GLuint);
-using PFNGLGETSHADERIVPROC = void(__stdcall *)(GLuint, GLenum, GLint *);
-using PFNGLGETSHADERINFOLOGPROC = void(__stdcall *)(GLuint, GLsizei, GLsizei *, GLchar *);
-using PFNGLCREATEPROGRAMPROC = GLuint(__stdcall *)();
-using PFNGLATTACHSHADERPROC = void(__stdcall *)(GLuint, GLuint);
-using PFNGLLINKPROGRAMPROC = void(__stdcall *)(GLuint);
-using PFNGLGETPROGRAMIVPROC = void(__stdcall *)(GLuint, GLenum, GLint *);
-using PFNGLGETPROGRAMINFOLOGPROC = void(__stdcall *)(GLuint, GLsizei, GLsizei *, GLchar *);
-using PFNGLUSEPROGRAMPROC = void(__stdcall *)(GLuint);
-using PFNGLDELETESHADERPROC = void(__stdcall *)(GLuint);
-using PFNGLDELETEPROGRAMPROC = void(__stdcall *)(GLuint);
-using PFNGLGENBUFFERSPROC = void(__stdcall *)(GLsizei, GLuint *);
-using PFNGLBINDBUFFERPROC = void(__stdcall *)(GLenum, GLuint);
-using PFNGLBUFFERDATAPROC = void(__stdcall *)(GLenum, GLsizeiptr, const void *, GLenum);
-using PFNGLGENVERTEXARRAYSPROC = void(__stdcall *)(GLsizei, GLuint *);
-using PFNGLBINDVERTEXARRAYPROC = void(__stdcall *)(GLuint);
-using PFNGLENABLEVERTEXATTRIBARRAYPROC = void(__stdcall *)(GLuint);
-using PFNGLVERTEXATTRIBPOINTERPROC = void(__stdcall *)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
-using PFNGLGETUNIFORMLOCATIONPROC = GLint(__stdcall *)(GLuint, const GLchar *);
-using PFNGLUNIFORM1FPROC = void(__stdcall *)(GLint, GLfloat);
-using PFNGLUNIFORM3FPROC = void(__stdcall *)(GLint, GLfloat, GLfloat, GLfloat);
-using PFNGLUNIFORMMATRIX4FVPROC = void(__stdcall *)(GLint, GLsizei, GLboolean, const GLfloat *);
+using MyGLCreateShaderProc = GLuint(__stdcall *)(GLenum);
+using MyGLShaderSourceProc = void(__stdcall *)(GLuint, GLsizei, const GLchar *const *, const GLint *);
+using MyGLCompileShaderProc = void(__stdcall *)(GLuint);
+using MyGLGetShaderivProc = void(__stdcall *)(GLuint, GLenum, GLint *);
+using MyGLGetShaderInfoLogProc = void(__stdcall *)(GLuint, GLsizei, GLsizei *, GLchar *);
+using MyGLCreateProgramProc = GLuint(__stdcall *)();
+using MyGLAttachShaderProc = void(__stdcall *)(GLuint, GLuint);
+using MyGLLinkProgramProc = void(__stdcall *)(GLuint);
+using MyGLGetProgramivProc = void(__stdcall *)(GLuint, GLenum, GLint *);
+using MyGLGetProgramInfoLogProc = void(__stdcall *)(GLuint, GLsizei, GLsizei *, GLchar *);
+using MyGLUseProgramProc = void(__stdcall *)(GLuint);
+using MyGLDeleteShaderProc = void(__stdcall *)(GLuint);
+using MyGLDeleteProgramProc = void(__stdcall *)(GLuint);
+using MyGLGenBuffersProc = void(__stdcall *)(GLsizei, GLuint *);
+using MyGLBindBufferProc = void(__stdcall *)(GLenum, GLuint);
+using MyGLBufferDataProc = void(__stdcall *)(GLenum, GLsizeiptr, const void *, GLenum);
+using MyGLGenVertexArraysProc = void(__stdcall *)(GLsizei, GLuint *);
+using MyGLBindVertexArrayProc = void(__stdcall *)(GLuint);
+using MyGLEnableVertexAttribArrayProc = void(__stdcall *)(GLuint);
+using MyGLVertexAttribPointerProc = void(__stdcall *)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
+using MyGLGetUniformLocationProc = GLint(__stdcall *)(GLuint, const GLchar *);
+using MyGLUniform1fProc = void(__stdcall *)(GLint, GLfloat);
+using MyGLUniform3fProc = void(__stdcall *)(GLint, GLfloat, GLfloat, GLfloat);
+using MyGLUniformMatrix4fvProc = void(__stdcall *)(GLint, GLsizei, GLboolean, const GLfloat *);
 
-static PFNGLCREATESHADERPROC glCreateShader_ = nullptr;
-static PFNGLSHADERSOURCEPROC glShaderSource_ = nullptr;
-static PFNGLCOMPILESHADERPROC glCompileShader_ = nullptr;
-static PFNGLGETSHADERIVPROC glGetShaderiv_ = nullptr;
-static PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog_ = nullptr;
-static PFNGLCREATEPROGRAMPROC glCreateProgram_ = nullptr;
-static PFNGLATTACHSHADERPROC glAttachShader_ = nullptr;
-static PFNGLLINKPROGRAMPROC glLinkProgram_ = nullptr;
-static PFNGLGETPROGRAMIVPROC glGetProgramiv_ = nullptr;
-static PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog_ = nullptr;
-static PFNGLUSEPROGRAMPROC glUseProgram_ = nullptr;
-static PFNGLDELETESHADERPROC glDeleteShader_ = nullptr;
-static PFNGLDELETEPROGRAMPROC glDeleteProgram_ = nullptr;
-static PFNGLGENBUFFERSPROC glGenBuffers_ = nullptr;
-static PFNGLBINDBUFFERPROC glBindBuffer_ = nullptr;
-static PFNGLBUFFERDATAPROC glBufferData_ = nullptr;
-static PFNGLGENVERTEXARRAYSPROC glGenVertexArrays_ = nullptr;
-static PFNGLBINDVERTEXARRAYPROC glBindVertexArray_ = nullptr;
-static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray_ = nullptr;
-static PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer_ = nullptr;
-static PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation_ = nullptr;
-static PFNGLUNIFORM1FPROC glUniform1f_ = nullptr;
-static PFNGLUNIFORM3FPROC glUniform3f_ = nullptr;
-static PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv_ = nullptr;
+MyGLCreateShaderProc glCreateShader_ = nullptr;
+MyGLShaderSourceProc glShaderSource_ = nullptr;
+MyGLCompileShaderProc glCompileShader_ = nullptr;
+MyGLGetShaderivProc glGetShaderiv_ = nullptr;
+MyGLGetShaderInfoLogProc glGetShaderInfoLog_ = nullptr;
+MyGLCreateProgramProc glCreateProgram_ = nullptr;
+MyGLAttachShaderProc glAttachShader_ = nullptr;
+MyGLLinkProgramProc glLinkProgram_ = nullptr;
+MyGLGetProgramivProc glGetProgramiv_ = nullptr;
+MyGLGetProgramInfoLogProc glGetProgramInfoLog_ = nullptr;
+MyGLUseProgramProc glUseProgram_ = nullptr;
+MyGLDeleteShaderProc glDeleteShader_ = nullptr;
+MyGLDeleteProgramProc glDeleteProgram_ = nullptr;
+MyGLGenBuffersProc glGenBuffers_ = nullptr;
+MyGLBindBufferProc glBindBuffer_ = nullptr;
+MyGLBufferDataProc glBufferData_ = nullptr;
+MyGLGenVertexArraysProc glGenVertexArrays_ = nullptr;
+MyGLBindVertexArrayProc glBindVertexArray_ = nullptr;
+MyGLEnableVertexAttribArrayProc glEnableVertexAttribArray_ = nullptr;
+MyGLVertexAttribPointerProc glVertexAttribPointer_ = nullptr;
+MyGLGetUniformLocationProc glGetUniformLocation_ = nullptr;
+MyGLUniform1fProc glUniform1f_ = nullptr;
+MyGLUniform3fProc glUniform3f_ = nullptr;
+MyGLUniformMatrix4fvProc glUniformMatrix4fv_ = nullptr;
 
 struct Vec3 {
 	float x, y, z;
@@ -97,18 +97,6 @@ struct Vec3 {
 
 struct Mat4 {
 	float m[16]{};
-};
-
-struct Vertex {
-	float px, py, pz;
-	float nx, ny, nz;
-	float foam;
-};
-
-struct TerrainGPU {
-	GLuint vao = 0;
-	GLuint vbo = 0;
-	GLuint count = 0;
 };
 
 struct Camera {
@@ -143,48 +131,6 @@ static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 static float smoothstep(float a, float b, float x) {
 	float t = clampf((x - a) / (b - a), 0.0f, 1.0f);
 	return t * t * (3.0f - 2.0f * t);
-}
-
-static float hash2(int x, int y) {
-	uint32_t n = static_cast<uint32_t>(x * 374761393u + y * 668265263u);
-	n = (n ^ (n >> 13u)) * 1274126177u;
-	return static_cast<float>((n ^ (n >> 16u)) & 0x00ffffffu) / 16777215.0f;
-}
-
-static float valueNoise(float x, float y) {
-	int x0 = static_cast<int>(std::floor(x));
-	int y0 = static_cast<int>(std::floor(y));
-	float tx = x - x0;
-	float ty = y - y0;
-	float a = hash2(x0, y0);
-	float b = hash2(x0 + 1, y0);
-	float c = hash2(x0, y0 + 1);
-	float d = hash2(x0 + 1, y0 + 1);
-	float ux = tx * tx * (3.0f - 2.0f * tx);
-	float uy = ty * ty * (3.0f - 2.0f * ty);
-	return lerpf(lerpf(a, b, ux), lerpf(c, d, ux), uy);
-}
-
-static float fbm(float x, float y) {
-	float sum = 0.0f;
-	float amp = 1.0f;
-	float freq = 0.08f;
-	for (int i = 0; i < 5; ++i) {
-		sum += amp * valueNoise(x * freq, y * freq);
-		freq *= 2.0f;
-		amp *= 0.5f;
-	}
-	return sum;
-}
-
-static float terrainBaseHeight(float x, float z) {
-	float n = fbm(x * 0.8f, z * 0.8f);
-	float ridge = std::pow(std::fabs(0.5f - valueNoise(x * 1.9f, z * 1.9f)), 1.4f);
-	return -8.0f + n * 3.0f + ridge * 0.6f;
-}
-
-static float terrainHeight(float x, float z, float time) {
-	return terrainBaseHeight(x, z) + std::sin(x * 0.22f + time * 0.7f) * 0.12f + std::cos(z * 0.19f - time * 0.5f) * 0.10f;
 }
 
 static Vec3 normalize(Vec3 v) {
@@ -256,30 +202,30 @@ static void loadGLFunctions() {
 		}
 		return p;
 	};
-	glCreateShader_ = reinterpret_cast<PFNGLCREATESHADERPROC>(load("glCreateShader"));
-	glShaderSource_ = reinterpret_cast<PFNGLSHADERSOURCEPROC>(load("glShaderSource"));
-	glCompileShader_ = reinterpret_cast<PFNGLCOMPILESHADERPROC>(load("glCompileShader"));
-	glGetShaderiv_ = reinterpret_cast<PFNGLGETSHADERIVPROC>(load("glGetShaderiv"));
-	glGetShaderInfoLog_ = reinterpret_cast<PFNGLGETSHADERINFOLOGPROC>(load("glGetShaderInfoLog"));
-	glCreateProgram_ = reinterpret_cast<PFNGLCREATEPROGRAMPROC>(load("glCreateProgram"));
-	glAttachShader_ = reinterpret_cast<PFNGLATTACHSHADERPROC>(load("glAttachShader"));
-	glLinkProgram_ = reinterpret_cast<PFNGLLINKPROGRAMPROC>(load("glLinkProgram"));
-	glGetProgramiv_ = reinterpret_cast<PFNGLGETPROGRAMIVPROC>(load("glGetProgramiv"));
-	glGetProgramInfoLog_ = reinterpret_cast<PFNGLGETPROGRAMINFOLOGPROC>(load("glGetProgramInfoLog"));
-	glUseProgram_ = reinterpret_cast<PFNGLUSEPROGRAMPROC>(load("glUseProgram"));
-	glDeleteShader_ = reinterpret_cast<PFNGLDELETESHADERPROC>(load("glDeleteShader"));
-	glDeleteProgram_ = reinterpret_cast<PFNGLDELETEPROGRAMPROC>(load("glDeleteProgram"));
-	glGenBuffers_ = reinterpret_cast<PFNGLGENBUFFERSPROC>(load("glGenBuffers"));
-	glBindBuffer_ = reinterpret_cast<PFNGLBINDBUFFERPROC>(load("glBindBuffer"));
-	glBufferData_ = reinterpret_cast<PFNGLBUFFERDATAPROC>(load("glBufferData"));
-	glGenVertexArrays_ = reinterpret_cast<PFNGLGENVERTEXARRAYSPROC>(load("glGenVertexArrays"));
-	glBindVertexArray_ = reinterpret_cast<PFNGLBINDVERTEXARRAYPROC>(load("glBindVertexArray"));
-	glEnableVertexAttribArray_ = reinterpret_cast<PFNGLENABLEVERTEXATTRIBARRAYPROC>(load("glEnableVertexAttribArray"));
-	glVertexAttribPointer_ = reinterpret_cast<PFNGLVERTEXATTRIBPOINTERPROC>(load("glVertexAttribPointer"));
-	glGetUniformLocation_ = reinterpret_cast<PFNGLGETUNIFORMLOCATIONPROC>(load("glGetUniformLocation"));
-	glUniform1f_ = reinterpret_cast<PFNGLUNIFORM1FPROC>(load("glUniform1f"));
-	glUniform3f_ = reinterpret_cast<PFNGLUNIFORM3FPROC>(load("glUniform3f"));
-	glUniformMatrix4fv_ = reinterpret_cast<PFNGLUNIFORMMATRIX4FVPROC>(load("glUniformMatrix4fv"));
+  glCreateShader_ = reinterpret_cast<MyGLCreateShaderProc>(load("glCreateShader"));
+	glShaderSource_ = reinterpret_cast<MyGLShaderSourceProc>(load("glShaderSource"));
+	glCompileShader_ = reinterpret_cast<MyGLCompileShaderProc>(load("glCompileShader"));
+	glGetShaderiv_ = reinterpret_cast<MyGLGetShaderivProc>(load("glGetShaderiv"));
+	glGetShaderInfoLog_ = reinterpret_cast<MyGLGetShaderInfoLogProc>(load("glGetShaderInfoLog"));
+	glCreateProgram_ = reinterpret_cast<MyGLCreateProgramProc>(load("glCreateProgram"));
+	glAttachShader_ = reinterpret_cast<MyGLAttachShaderProc>(load("glAttachShader"));
+	glLinkProgram_ = reinterpret_cast<MyGLLinkProgramProc>(load("glLinkProgram"));
+	glGetProgramiv_ = reinterpret_cast<MyGLGetProgramivProc>(load("glGetProgramiv"));
+	glGetProgramInfoLog_ = reinterpret_cast<MyGLGetProgramInfoLogProc>(load("glGetProgramInfoLog"));
+	glUseProgram_ = reinterpret_cast<MyGLUseProgramProc>(load("glUseProgram"));
+	glDeleteShader_ = reinterpret_cast<MyGLDeleteShaderProc>(load("glDeleteShader"));
+	glDeleteProgram_ = reinterpret_cast<MyGLDeleteProgramProc>(load("glDeleteProgram"));
+	glGenBuffers_ = reinterpret_cast<MyGLGenBuffersProc>(load("glGenBuffers"));
+	glBindBuffer_ = reinterpret_cast<MyGLBindBufferProc>(load("glBindBuffer"));
+	glBufferData_ = reinterpret_cast<MyGLBufferDataProc>(load("glBufferData"));
+	glGenVertexArrays_ = reinterpret_cast<MyGLGenVertexArraysProc>(load("glGenVertexArrays"));
+	glBindVertexArray_ = reinterpret_cast<MyGLBindVertexArrayProc>(load("glBindVertexArray"));
+	glEnableVertexAttribArray_ = reinterpret_cast<MyGLEnableVertexAttribArrayProc>(load("glEnableVertexAttribArray"));
+	glVertexAttribPointer_ = reinterpret_cast<MyGLVertexAttribPointerProc>(load("glVertexAttribPointer"));
+	glGetUniformLocation_ = reinterpret_cast<MyGLGetUniformLocationProc>(load("glGetUniformLocation"));
+	glUniform1f_ = reinterpret_cast<MyGLUniform1fProc>(load("glUniform1f"));
+	glUniform3f_ = reinterpret_cast<MyGLUniform3fProc>(load("glUniform3f"));
+	glUniformMatrix4fv_ = reinterpret_cast<MyGLUniformMatrix4fvProc>(load("glUniformMatrix4fv"));
 }
 
 static GLuint compileShader(GLenum type, const char *source) {
@@ -319,56 +265,6 @@ static GLuint createProgram(const char *vs, const char *fs) {
 	return program;
 }
 
-static void buildTerrain() {
-	constexpr int gridX = 180;
-	constexpr int gridY = 140;
-	constexpr float sizeX = kTerrainWidth;
-	constexpr float sizeZ = kTerrainDepth;
-	std::vector<Vertex> vertices;
-	vertices.reserve((gridX - 1) * (gridY - 1) * 6);
-
-	for (int z = 0; z < gridY - 1; ++z) {
-		for (int x = 0; x < gridX - 1; ++x) {
-			auto sample = [&](int ix, int iz) {
-				float fx = (static_cast<float>(ix) / (gridX - 1) - 0.5f) * sizeX;
-				float fz = (static_cast<float>(iz) / (gridY - 1) - 0.5f) * sizeZ;
-				float base = terrainBaseHeight(fx, fz);
-				float slopeX = terrainBaseHeight(fx + 0.3f, fz) - terrainBaseHeight(fx - 0.3f, fz);
-				float slopeZ = terrainBaseHeight(fx, fz + 0.3f) - terrainBaseHeight(fx, fz - 0.3f);
-				Vec3 normal = normalize({-slopeX, 0.9f, -slopeZ});
-				float foam = smoothstep(-6.0f, -2.0f, base);
-				return Vertex{fx, base, fz, normal.x, normal.y, normal.z, foam};
-			};
-
-			Vertex v0 = sample(x, z);
-			Vertex v1 = sample(x + 1, z);
-			Vertex v2 = sample(x, z + 1);
-			Vertex v3 = sample(x + 1, z + 1);
-
-			vertices.push_back(v0);
-			vertices.push_back(v2);
-			vertices.push_back(v1);
-			vertices.push_back(v1);
-			vertices.push_back(v2);
-			vertices.push_back(v3);
-		}
-	}
-
-	g_terrain.count = static_cast<GLuint>(vertices.size());
-	glGenVertexArrays_(1, &g_terrain.vao);
-	glBindVertexArray_(g_terrain.vao);
-	glGenBuffers_(1, &g_terrain.vbo);
-	glBindBuffer_(kGL_ARRAY_BUFFER, g_terrain.vbo);
-	glBufferData_(kGL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(Vertex)), vertices.data(), kGL_STATIC_DRAW);
-	glEnableVertexAttribArray_(0);
-	glVertexAttribPointer_(0, 3, GL_FLOAT, 0, sizeof(Vertex), reinterpret_cast<void *>(0));
-	glEnableVertexAttribArray_(1);
-	glVertexAttribPointer_(1, 3, GL_FLOAT, 0, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, nx)));
-	glEnableVertexAttribArray_(2);
-	glVertexAttribPointer_(2, 1, GL_FLOAT, 0, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, foam)));
-	glBindVertexArray_(0);
-}
-
 static void initScene() {
 	const char *vs = R"GLSL(
 #version 330 core
@@ -385,12 +281,7 @@ out float vFoam;
 
 void main() {
     vec3 pos = aPos;
-    pos.y += sin(pos.x * 0.22 + uTime * 0.7) * 0.12 + cos(pos.z * 0.19 - uTime * 0.5) * 0.10;
-    vec3 normal = normalize(aNormal + vec3(
-        cos(pos.x * 0.22 + uTime * 0.7) * 0.03,
-        0.0,
-        -sin(pos.z * 0.19 - uTime * 0.5) * 0.03
-    ));
+    vec3 normal = normalize(aNormal);
     vWorldPos = pos;
     vNormal = normal;
     vFoam = aFoam;
@@ -438,7 +329,7 @@ void main() {
 	g_uFogDensity = glGetUniformLocation_(g_program, "uFogDensity");
 	g_uBaseColor = glGetUniformLocation_(g_program, "uBaseColor");
 	g_uDeepColor = glGetUniformLocation_(g_program, "uDeepColor");
-	buildTerrain();
+   buildTerrain(g_terrain);
 	glEnable(kGL_DEPTH_TEST);
 }
 
@@ -481,7 +372,7 @@ static void updateInput(float dt) {
 	g_camera.x = clampf(g_camera.x, -halfW + 0.5f, halfW - 0.5f);
 	g_camera.z = clampf(g_camera.z, -halfD + 0.5f, halfD - 0.5f);
 
-	float ground = terrainHeight(g_camera.x, g_camera.z, g_time);
+   float ground = terrainHeight(g_camera.x, g_camera.z, 0.0f);
 	float minY = ground + kCameraClearance;
 	if (g_camera.y < minY) g_camera.y = minY;
 
@@ -632,6 +523,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 		wglMakeCurrent(nullptr, nullptr);
 		wglDeleteContext(g_hrc);
 	}
+  destroyTerrain(g_terrain);
 	if (g_hwnd && g_hdc) ReleaseDC(g_hwnd, g_hdc);
 	return 0;
 }
