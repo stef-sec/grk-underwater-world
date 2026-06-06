@@ -7,7 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "camera.h"
 #include "terrain.h"
+#include "water.h"
 
 #pragma comment(lib, "opengl32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -40,6 +42,9 @@ static constexpr GLenum kGL_TRIANGLES = 0x0004;
 static constexpr GLenum kGL_COLOR_BUFFER_BIT = 0x00004000;
 static constexpr GLenum kGL_DEPTH_BUFFER_BIT = 0x00000100;
 static constexpr GLenum kGL_DEPTH_TEST = 0x0B71;
+static constexpr GLenum kGL_BLEND = 0x0BE2;
+static constexpr GLenum kGL_SRC_ALPHA = 0x0302;
+static constexpr GLenum kGL_ONE_MINUS_SRC_ALPHA = 0x0303;
 
 using MyGLCreateShaderProc = GLuint(__stdcall *)(GLenum);
 using MyGLShaderSourceProc = void(__stdcall *)(GLuint, GLsizei, const GLchar *const *, const GLint *);
@@ -91,20 +96,8 @@ MyGLUniform1fProc glUniform1f_ = nullptr;
 MyGLUniform3fProc glUniform3f_ = nullptr;
 MyGLUniformMatrix4fvProc glUniformMatrix4fv_ = nullptr;
 
-struct Vec3 {
-	float x, y, z;
-};
-
 struct Mat4 {
 	float m[16]{};
-};
-
-struct Camera {
-	float x = 0.0f;
-	float y = -1.0f;
-	float z = 16.0f;
-	float yaw = 3.14159265f;
-	float pitch = -0.15f;
 };
 
 static HDC g_hdc = nullptr;
@@ -112,18 +105,24 @@ static HGLRC g_hrc = nullptr;
 static HWND g_hwnd = nullptr;
 static bool g_running = true;
 static TerrainGPU g_terrain;
+static WaterGPU g_water;
 static GLuint g_program = 0;
+static GLuint g_waterProgram = 0;
 static GLint g_uViewProj = -1;
 static GLint g_uTime = -1;
 static GLint g_uWaterLevel = -1;
 static GLint g_uFogDensity = -1;
 static GLint g_uBaseColor = -1;
 static GLint g_uDeepColor = -1;
+static GLint g_uWaterViewProj = -1;
+static GLint g_uWaterTime = -1;
+static GLint g_uWaterSurfaceLevel = -1;
+static GLint g_uWaterCameraY = -1;
+static GLint g_uWaterCameraY2 = -1;
 static Camera g_camera;
-static bool g_keyW = false, g_keyA = false, g_keyS = false, g_keyD = false;
-static bool g_keyQ = false, g_keyE = false, g_keyUp = false, g_keyDown = false, g_keyLeft = false, g_keyRight = false;
+static CameraInput g_input;
 static float g_time = 0.0f;
-static float g_waterLevel = 0.8f;
+static float g_waterLevel = 1.4f;
 static float g_fogDensity = 0.07f;
 
 static float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
@@ -142,13 +141,6 @@ static Vec3 normalize(Vec3 v) {
 static Vec3 cross(Vec3 a, Vec3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
 static Vec3 subtract(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
 static float dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-
-static Vec3 forwardFromAngles(float yaw, float pitch) {
-	float cp = std::cos(pitch);
-	return {cp * std::sin(yaw), std::sin(pitch), cp * std::cos(yaw)};
-}
-
-static Vec3 rightFromYaw(float yaw) { return {std::cos(yaw), 0.0f, -std::sin(yaw)}; }
 
 static Mat4 identity() {
 	Mat4 r{};
@@ -265,6 +257,55 @@ static GLuint createProgram(const char *vs, const char *fs) {
 	return program;
 }
 
+static void initWaterScene() {
+	const char *vs = R"GLSL(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+
+uniform mat4 uViewProj;
+uniform float uTime;
+uniform float uWaterSurfaceLevel;
+
+out float vWave;
+
+void main() {
+	vec3 pos = aPos;
+	float wave = sin(pos.x * 0.15 + uTime * 0.8) * 0.08 + cos(pos.z * 0.12 - uTime * 0.6) * 0.06;
+	pos.y = uWaterSurfaceLevel + wave;
+	vWave = wave;
+	gl_Position = uViewProj * vec4(pos, 1.0);
+}
+)GLSL";
+
+	const char *fs = R"GLSL(
+#version 330 core
+in float vWave;
+
+uniform float uWaterCameraY;
+uniform float uWaterSurfaceLevel;
+uniform float uWaterTime;
+
+out vec4 FragColor;
+
+void main() {
+	float alpha = 0.28;
+	float edge = smoothstep(0.0, 0.1, abs(vWave));
+	vec3 color = mix(vec3(0.08, 0.34, 0.42), vec3(0.03, 0.15, 0.26), edge);
+	if (uWaterCameraY < uWaterSurfaceLevel) {
+		color += vec3(0.02, 0.06, 0.08);
+	}
+	FragColor = vec4(color, alpha);
+}
+)GLSL";
+
+	g_waterProgram = createProgram(vs, fs);
+	g_uWaterViewProj = glGetUniformLocation_(g_waterProgram, "uViewProj");
+	g_uWaterTime = glGetUniformLocation_(g_waterProgram, "uTime");
+	g_uWaterSurfaceLevel = glGetUniformLocation_(g_waterProgram, "uWaterSurfaceLevel");
+	g_uWaterCameraY = glGetUniformLocation_(g_waterProgram, "uWaterCameraY");
+	buildWater(g_water);
+}
+
 static void initScene() {
 	const char *vs = R"GLSL(
 #version 330 core
@@ -329,7 +370,8 @@ void main() {
 	g_uFogDensity = glGetUniformLocation_(g_program, "uFogDensity");
 	g_uBaseColor = glGetUniformLocation_(g_program, "uBaseColor");
 	g_uDeepColor = glGetUniformLocation_(g_program, "uDeepColor");
-   buildTerrain(g_terrain);
+ buildTerrain(g_terrain);
+	initWaterScene();
 	glEnable(kGL_DEPTH_TEST);
 }
 
@@ -339,42 +381,7 @@ static void resizeViewport(int width, int height) {
 }
 
 static void updateInput(float dt) {
-	g_camera.yaw += (g_keyRight ? 1.0f : 0.0f) * kTurnSpeed * dt;
-	g_camera.yaw -= (g_keyLeft ? 1.0f : 0.0f) * kTurnSpeed * dt;
-	g_camera.pitch += (g_keyUp ? 1.0f : 0.0f) * kTurnSpeed * dt;
-	g_camera.pitch -= (g_keyDown ? 1.0f : 0.0f) * kTurnSpeed * dt;
-	g_camera.pitch = clampf(g_camera.pitch, -1.35f, 1.0f);
-
-	Vec3 forward = forwardFromAngles(g_camera.yaw, g_camera.pitch);
-	Vec3 right = rightFromYaw(g_camera.yaw);
-	Vec3 velocity{0.0f, 0.0f, 0.0f};
-
-	if (g_keyW) { velocity.x += forward.x; velocity.y += forward.y; velocity.z += forward.z; }
-	if (g_keyS) { velocity.x -= forward.x; velocity.y -= forward.y; velocity.z -= forward.z; }
-	if (g_keyD) { velocity.x += right.x; velocity.z += right.z; }
-	if (g_keyA) { velocity.x -= right.x; velocity.z -= right.z; }
-	if (g_keyE) velocity.y += 1.0f;
-	if (g_keyQ) velocity.y -= 1.0f;
-
-	float len = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z);
-	if (len > 0.0001f) {
-		velocity.x /= len;
-		velocity.y /= len;
-		velocity.z /= len;
-	}
-
-	g_camera.x += velocity.x * kMoveSpeed * dt;
-	g_camera.y += velocity.y * kVerticalSpeed * dt;
-	g_camera.z += velocity.z * kMoveSpeed * dt;
-
-	float halfW = kTerrainWidth * 0.5f;
-	float halfD = kTerrainDepth * 0.5f;
-	g_camera.x = clampf(g_camera.x, -halfW + 0.5f, halfW - 0.5f);
-	g_camera.z = clampf(g_camera.z, -halfD + 0.5f, halfD - 0.5f);
-
-   float ground = terrainHeight(g_camera.x, g_camera.z, 0.0f);
-	float minY = ground + kCameraClearance;
-	if (g_camera.y < minY) g_camera.y = minY;
+   updateCamera(g_camera, g_input, dt, terrainHeight, 0.0f, kTerrainWidth, kTerrainDepth, kCameraClearance, kMoveSpeed, kVerticalSpeed, kTurnSpeed);
 
 	if (GetAsyncKeyState(VK_PRIOR) & 0x8000) g_waterLevel += 1.2f * dt;
 	if (GetAsyncKeyState(VK_NEXT) & 0x8000) g_waterLevel -= 1.2f * dt;
@@ -392,11 +399,11 @@ static void renderFrame() {
 	glClearColor(0.01f, 0.07f, 0.12f, 1.0f);
 	glClear(kGL_COLOR_BUFFER_BIT | kGL_DEPTH_BUFFER_BIT);
 
-	Vec3 eye{g_camera.x, g_camera.y, g_camera.z};
-	Vec3 forward = forwardFromAngles(g_camera.yaw, g_camera.pitch);
-	Mat4 proj = perspective(60.0f * 3.14159265f / 180.0f, static_cast<float>(width) / static_cast<float>(height), 0.1f, 200.0f);
-	Mat4 view = lookAt(eye, {eye.x + forward.x, eye.y + forward.y, eye.z + forward.z}, {0.0f, 1.0f, 0.0f});
-	Mat4 vp = multiply(proj, view);
+    Vec3 eye{g_camera.x, g_camera.y, g_camera.z};
+    Vec3 forward = cameraForward(g_camera.yaw, g_camera.pitch);
+    Mat4 proj = perspective(60.0f * 3.14159265f / 180.0f, static_cast<float>(width) / static_cast<float>(height), 0.1f, 200.0f);
+    Mat4 view = lookAt(eye, {eye.x + forward.x, eye.y + forward.y, eye.z + forward.z}, {0.0f, 1.0f, 0.0f});
+    Mat4 vp = multiply(proj, view);
 
 	glUseProgram_(g_program);
 	glUniformMatrix4fv_(g_uViewProj, 1, 0, vp.m);
@@ -409,6 +416,19 @@ static void renderFrame() {
 	glBindVertexArray_(g_terrain.vao);
 	glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(g_terrain.count));
 	glBindVertexArray_(0);
+
+	glEnable(kGL_BLEND);
+	glBlendFunc(kGL_SRC_ALPHA, kGL_ONE_MINUS_SRC_ALPHA);
+	glUseProgram_(g_waterProgram);
+	glUniformMatrix4fv_(g_uWaterViewProj, 1, 0, vp.m);
+	glUniform1f_(g_uWaterTime, g_time);
+	glUniform1f_(g_uWaterSurfaceLevel, g_waterLevel);
+	glUniform1f_(g_uWaterCameraY, g_camera.y);
+	glBindVertexArray_(g_water.vao);
+	glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(g_water.count));
+	glBindVertexArray_(0);
+	glUseProgram_(0);
+	glDisable(kGL_BLEND);
 	glUseProgram_(0);
 	SwapBuffers(g_hdc);
 }
@@ -425,32 +445,32 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 		return 0;
 	case WM_KEYDOWN:
 		switch (wParam) {
-		case 'W': g_keyW = true; break;
-		case 'A': g_keyA = true; break;
-		case 'S': g_keyS = true; break;
-		case 'D': g_keyD = true; break;
-		case 'Q': g_keyQ = true; break;
-		case 'E': g_keyE = true; break;
-		case VK_LEFT: g_keyLeft = true; break;
-		case VK_RIGHT: g_keyRight = true; break;
-		case VK_UP: g_keyUp = true; break;
-		case VK_DOWN: g_keyDown = true; break;
+     case 'W': g_input.forward = true; break;
+		case 'A': g_input.left = true; break;
+		case 'S': g_input.backward = true; break;
+		case 'D': g_input.right = true; break;
+		case 'Q': g_input.down = true; break;
+		case 'E': g_input.up = true; break;
+		case VK_LEFT: g_input.turnLeft = true; break;
+		case VK_RIGHT: g_input.turnRight = true; break;
+		case VK_UP: g_input.turnUp = true; break;
+		case VK_DOWN: g_input.turnDown = true; break;
 		case VK_ESCAPE: g_running = false; PostQuitMessage(0); break;
 		default: break;
 		}
 		return 0;
 	case WM_KEYUP:
 		switch (wParam) {
-		case 'W': g_keyW = false; break;
-		case 'A': g_keyA = false; break;
-		case 'S': g_keyS = false; break;
-		case 'D': g_keyD = false; break;
-		case 'Q': g_keyQ = false; break;
-		case 'E': g_keyE = false; break;
-		case VK_LEFT: g_keyLeft = false; break;
-		case VK_RIGHT: g_keyRight = false; break;
-		case VK_UP: g_keyUp = false; break;
-		case VK_DOWN: g_keyDown = false; break;
+        case 'W': g_input.forward = false; break;
+		case 'A': g_input.left = false; break;
+		case 'S': g_input.backward = false; break;
+		case 'D': g_input.right = false; break;
+		case 'Q': g_input.down = false; break;
+		case 'E': g_input.up = false; break;
+		case VK_LEFT: g_input.turnLeft = false; break;
+		case VK_RIGHT: g_input.turnRight = false; break;
+		case VK_UP: g_input.turnUp = false; break;
+		case VK_DOWN: g_input.turnDown = false; break;
 		default: break;
 		}
 		return 0;
@@ -523,6 +543,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 		wglMakeCurrent(nullptr, nullptr);
 		wglDeleteContext(g_hrc);
 	}
+    destroyWater(g_water);
   destroyTerrain(g_terrain);
 	if (g_hwnd && g_hdc) ReleaseDC(g_hwnd, g_hdc);
 	return 0;

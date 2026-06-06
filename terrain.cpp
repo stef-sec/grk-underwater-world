@@ -74,10 +74,12 @@ static float fbm(float x, float y) {
 }
 
 float terrainHeight(float x, float z, float time) {
-    float n = fbm(x * 0.8f, z * 0.8f);
-    float ridge = std::pow(std::fabs(0.5f - valueNoise(x * 1.9f, z * 1.9f)), 1.4f);
-    float base = -8.0f + n * 4.0f + ridge * 0.9f;
-    return base + std::sin(x * 0.22f + time * 0.7f) * 0.12f + std::cos(z * 0.19f - time * 0.5f) * 0.10f;
+    float n = fbm(x * 0.75f, z * 0.75f);
+    float ridge = std::pow(std::fabs(0.5f - valueNoise(x * 1.7f, z * 1.7f)), 1.45f);
+    float basinSource = 0.65f - valueNoise(x * 0.35f, z * 0.35f);
+    float basin = -0.85f * std::pow(basinSource > 0.0f ? basinSource : 0.0f, 2.2f);
+    float base = -8.0f + n * 3.7f + ridge * 1.0f + basin * 2.4f;
+    return base + std::sin(x * 0.18f + time * 0.7f) * 0.10f + std::cos(z * 0.16f - time * 0.5f) * 0.08f;
 }
 
 void buildTerrain(TerrainGPU &terrain) {
