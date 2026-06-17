@@ -128,15 +128,40 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="camera.cpp" />
+    <ClCompile Include="gl_loader.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="math.cpp" />
+    <ClCompile Include="shader.cpp" />
+    <ClCompile Include="shadow.cpp" />
+    <ClCompile Include="skybox.cpp" />
     <ClCompile Include="terrain.cpp" />
     <ClCompile Include="water.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
+    <ClInclude Include="gl_loader.h" />
+    <ClInclude Include="lighting.h" />
+    <ClInclude Include="math.h" />
+    <ClInclude Include="shader.h" />
+    <ClInclude Include="shadow.h" />
+    <ClInclude Include="skybox.h" />
     <ClInclude Include="terrain.h" />
     <ClInclude Include="water.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\shadow.frag" />
+    <None Include="shaders\shadow.vert" />
+    <None Include="shaders\skybox.frag" />
+    <None Include="shaders\skybox.vert" />
+    <None Include="shaders\terrain.frag" />
+    <None Include="shaders\terrain.vert" />
+    <None Include="shaders\water.frag" />
+    <None Include="shaders\water.vert" />
+  </ItemGroup>
+  <Target Name="CopyShaders" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)shaders" />
+    <Copy SourceFiles="@(None->'%(Identity)')" DestinationFolder="$(OutDir)shaders" SkipUnchangedFiles="true" Condition="$([System.String]::Copy('%(Identity)').StartsWith('shaders\'))" />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

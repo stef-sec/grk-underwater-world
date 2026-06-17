@@ -1,8 +1,6 @@
 #pragma once
 
-#include <cstdint>
-
-using GLuint = unsigned int;
+#include "gl_loader.h"
 
 struct TerrainGPU {
     GLuint vao = 0;

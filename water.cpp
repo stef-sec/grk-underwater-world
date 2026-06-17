@@ -3,35 +3,9 @@
 #include <GL/gl.h>
 
 #include "water.h"
+#include "gl_loader.h"
 
 #include <vector>
-
-using GLsizeiptr = ptrdiff_t;
-using GLboolean = unsigned char;
-
-using MyGLGenBuffersProc = void(__stdcall *)(GLsizei, GLuint *);
-using MyGLBindBufferProc = void(__stdcall *)(GLenum, GLuint);
-using MyGLBufferDataProc = void(__stdcall *)(GLenum, GLsizeiptr, const void *, GLenum);
-using MyGLGenVertexArraysProc = void(__stdcall *)(GLsizei, GLuint *);
-using MyGLBindVertexArrayProc = void(__stdcall *)(GLuint);
-using MyGLEnableVertexAttribArrayProc = void(__stdcall *)(GLuint);
-using MyGLVertexAttribPointerProc = void(__stdcall *)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
-using MyGLDeleteBuffersProc = void(__stdcall *)(GLsizei, const GLuint *);
-using MyGLDeleteVertexArraysProc = void(__stdcall *)(GLsizei, const GLuint *);
-
-extern MyGLGenBuffersProc glGenBuffers_;
-extern MyGLBindBufferProc glBindBuffer_;
-extern MyGLBufferDataProc glBufferData_;
-extern MyGLGenVertexArraysProc glGenVertexArrays_;
-extern MyGLBindVertexArrayProc glBindVertexArray_;
-extern MyGLEnableVertexAttribArrayProc glEnableVertexAttribArray_;
-extern MyGLVertexAttribPointerProc glVertexAttribPointer_;
-extern MyGLDeleteBuffersProc glDeleteBuffers_;
-extern MyGLDeleteVertexArraysProc glDeleteVertexArrays_;
-
-static constexpr GLenum kGL_ARRAY_BUFFER = 0x8892;
-static constexpr GLenum kGL_STATIC_DRAW = 0x88E4;
-static constexpr GLenum kGL_FLOAT = 0x1406;
 
 struct WaterVertex {
     float px, py, pz;

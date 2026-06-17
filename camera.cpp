@@ -2,32 +2,38 @@
 
 #include <cmath>
 
-static float clampf(float v, float a, float b) {
-    return v < a ? a : (v > b ? b : v);
+Vec3 cameraForward(const Camera &camera) {
+    return quatRotate(camera.orientation, {0.0f, 0.0f, -1.0f});
 }
 
-Vec3 cameraForward(float yaw, float pitch) {
-    float cp = std::cos(pitch);
-    return {cp * std::sin(yaw), std::sin(pitch), cp * std::cos(yaw)};
-}
-
-Vec3 cameraRight(float yaw) {
-    return {std::cos(yaw), 0.0f, -std::sin(yaw)};
+Vec3 cameraRight(const Camera &camera) {
+    return quatRotate(camera.orientation, {1.0f, 0.0f, 0.0f});
 }
 
 void updateCamera(Camera &camera, const CameraInput &input, float dt, TerrainHeightFn terrainHeight, float terrainTime, float terrainWidth, float terrainDepth, float groundClearance, float waterSurface, float surfaceClearance, float moveSpeed, float verticalSpeed, float turnSpeed) {
-    camera.yaw += (input.turnRight ? 1.0f : 0.0f) * turnSpeed * dt;
-    camera.yaw -= (input.turnLeft ? 1.0f : 0.0f) * turnSpeed * dt;
-    camera.pitch += (input.turnUp ? 1.0f : 0.0f) * turnSpeed * dt;
-    camera.pitch -= (input.turnDown ? 1.0f : 0.0f) * turnSpeed * dt;
-    camera.pitch = clampf(camera.pitch, -1.35f, 1.0f);
+    const float yawDelta = ((input.turnRight ? 1.0f : 0.0f) - (input.turnLeft ? 1.0f : 0.0f)) * turnSpeed * dt;
+    const float pitchDelta = ((input.turnUp ? 1.0f : 0.0f) - (input.turnDown ? 1.0f : 0.0f)) * turnSpeed * dt;
 
-    Vec3 forward = cameraForward(camera.yaw, camera.pitch);
-    Vec3 right = cameraRight(camera.yaw);
+    if (std::fabs(yawDelta) > 0.00001f) {
+        Quat qYaw = quatFromAxisAngle({0.0f, 1.0f, 0.0f}, yawDelta);
+        camera.orientation = quatNormalize(quatMultiply(qYaw, camera.orientation));
+    }
+    if (std::fabs(pitchDelta) > 0.00001f) {
+        Vec3 right = cameraRight(camera);
+        Quat qPitch = quatFromAxisAngle(right, pitchDelta);
+        Quat trial = quatNormalize(quatMultiply(qPitch, camera.orientation));
+        Vec3 trialFwd = quatRotate(trial, {0.0f, 0.0f, -1.0f});
+        if (trialFwd.y <= 0.75f && trialFwd.y >= -0.92f) {
+            camera.orientation = trial;
+        }
+    }
+
+    Vec3 forward = cameraForward(camera);
+    Vec3 right = cameraRight(camera);
     Vec3 velocity{0.0f, 0.0f, 0.0f};
 
-    if (input.forward) { velocity.x += forward.x; velocity.y += forward.y; velocity.z += forward.z; }
-    if (input.backward) { velocity.x -= forward.x; velocity.y -= forward.y; velocity.z -= forward.z; }
+    if (input.forward) velocity = vec3Add(velocity, forward);
+    if (input.backward) velocity = vec3Subtract(velocity, forward);
     if (input.right) { velocity.x += right.x; velocity.z += right.z; }
     if (input.left) { velocity.x -= right.x; velocity.z -= right.z; }
     if (input.up) velocity.y += 1.0f;
@@ -44,13 +50,13 @@ void updateCamera(Camera &camera, const CameraInput &input, float dt, TerrainHei
     camera.y += velocity.y * verticalSpeed * dt;
     camera.z += velocity.z * moveSpeed * dt;
 
-    float halfW = terrainWidth * 0.5f;
-    float halfD = terrainDepth * 0.5f;
+    const float halfW = terrainWidth * 0.5f;
+    const float halfD = terrainDepth * 0.5f;
     camera.x = clampf(camera.x, -halfW + 0.5f, halfW - 0.5f);
     camera.z = clampf(camera.z, -halfD + 0.5f, halfD - 0.5f);
 
-    float ground = terrainHeight(camera.x, camera.z, terrainTime);
-    float minY = ground + groundClearance;
-    float maxY = waterSurface - surfaceClearance;
+    const float ground = terrainHeight(camera.x, camera.z, terrainTime);
+    const float minY = ground + groundClearance;
+    const float maxY = waterSurface - surfaceClearance;
     camera.y = clampf(camera.y, minY, maxY);
 }

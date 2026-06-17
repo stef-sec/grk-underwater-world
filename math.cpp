@@ -1,0 +1,122 @@
+#include "math.h"
+
+#include <cmath>
+
+float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
+float lerpf(float a, float b, float t) { return a + (b - a) * t; }
+
+float smoothstep(float a, float b, float x) {
+    float t = clampf((x - a) / (b - a), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+Vec3 vec3Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+Vec3 vec3Subtract(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+Vec3 vec3Scale(Vec3 v, float s) { return {v.x * s, v.y * s, v.z * s}; }
+float vec3Dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+Vec3 vec3Cross(Vec3 a, Vec3 b) {
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+Vec3 vec3Normalize(Vec3 v) {
+    float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    if (len <= 0.00001f) return {0.0f, 1.0f, 0.0f};
+    return {v.x / len, v.y / len, v.z / len};
+}
+
+Mat4 mat4Identity() {
+    Mat4 r{};
+    r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1.0f;
+    return r;
+}
+
+Mat4 mat4Multiply(const Mat4 &a, const Mat4 &b) {
+    Mat4 r{};
+    for (int c = 0; c < 4; ++c) {
+        for (int row = 0; row < 4; ++row) {
+            for (int k = 0; k < 4; ++k) {
+                r.m[c * 4 + row] += a.m[k * 4 + row] * b.m[c * 4 + k];
+            }
+        }
+    }
+    return r;
+}
+
+Mat4 mat4Perspective(float fovY, float aspect, float zNear, float zFar) {
+    Mat4 r{};
+    float f = 1.0f / std::tan(fovY * 0.5f);
+    r.m[0] = f / aspect;
+    r.m[5] = f;
+    r.m[10] = (zFar + zNear) / (zNear - zFar);
+    r.m[11] = -1.0f;
+    r.m[14] = (2.0f * zFar * zNear) / (zNear - zFar);
+    return r;
+}
+
+Mat4 mat4Ortho(float left, float right, float bottom, float top, float zNear, float zFar) {
+    Mat4 r = mat4Identity();
+    r.m[0] = 2.0f / (right - left);
+    r.m[5] = 2.0f / (top - bottom);
+    r.m[10] = -2.0f / (zFar - zNear);
+    r.m[12] = -(right + left) / (right - left);
+    r.m[13] = -(top + bottom) / (top - bottom);
+    r.m[14] = -(zFar + zNear) / (zFar - zNear);
+    return r;
+}
+
+Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up) {
+    Vec3 f = vec3Normalize(vec3Subtract(center, eye));
+    Vec3 s = vec3Normalize(vec3Cross(f, up));
+    Vec3 u = vec3Cross(s, f);
+    Mat4 r = mat4Identity();
+    r.m[0] = s.x; r.m[4] = s.y; r.m[8] = s.z;
+    r.m[1] = u.x; r.m[5] = u.y; r.m[9] = u.z;
+    r.m[2] = -f.x; r.m[6] = -f.y; r.m[10] = -f.z;
+    r.m[12] = -vec3Dot(s, eye);
+    r.m[13] = -vec3Dot(u, eye);
+    r.m[14] = vec3Dot(f, eye);
+    return r;
+}
+
+Mat4 mat4WithoutTranslation(const Mat4 &view) {
+    Mat4 r = view;
+    r.m[12] = r.m[13] = r.m[14] = 0.0f;
+    return r;
+}
+
+Quat quatNormalize(Quat q) {
+    float len = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    if (len <= 0.00001f) return {0.0f, 0.0f, 0.0f, 1.0f};
+    return {q.x / len, q.y / len, q.z / len, q.w / len};
+}
+
+Quat quatMultiply(Quat a, Quat b) {
+    return {
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    };
+}
+
+Quat quatFromAxisAngle(Vec3 axis, float angle) {
+    axis = vec3Normalize(axis);
+    float half = angle * 0.5f;
+    float s = std::sin(half);
+    return {axis.x * s, axis.y * s, axis.z * s, std::cos(half)};
+}
+
+Quat quatFromYawPitch(float yaw, float pitch) {
+    Quat qYaw = quatFromAxisAngle({0.0f, 1.0f, 0.0f}, yaw);
+    Quat qPitch = quatFromAxisAngle({1.0f, 0.0f, 0.0f}, pitch);
+    return quatNormalize(quatMultiply(qYaw, qPitch));
+}
+
+Vec3 quatRotate(Quat q, Vec3 v) {
+  q = quatNormalize(q);
+    Quat p{v.x, v.y, v.z, 0.0f};
+    Quat qi{-q.x, -q.y, -q.z, q.w};
+    Quat r = quatMultiply(quatMultiply(q, p), qi);
+    return {r.x, r.y, r.z};
+}

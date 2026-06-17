@@ -1,15 +1,12 @@
 #pragma once
 
-struct Vec3 {
-    float x, y, z;
-};
+#include "math.h"
 
 struct Camera {
     float x = 0.0f;
     float y = -1.0f;
     float z = 16.0f;
-    float yaw = 3.14159265f;
-    float pitch = -0.15f;
+    Quat orientation = quatFromYawPitch(3.14159265f, -0.15f);
 };
 
 struct CameraInput {
@@ -27,6 +24,6 @@ struct CameraInput {
 
 using TerrainHeightFn = float (*)(float x, float z, float time);
 
-Vec3 cameraForward(float yaw, float pitch);
-Vec3 cameraRight(float yaw);
+Vec3 cameraForward(const Camera &camera);
+Vec3 cameraRight(const Camera &camera);
 void updateCamera(Camera &camera, const CameraInput &input, float dt, TerrainHeightFn terrainHeight, float terrainTime, float terrainWidth, float terrainDepth, float groundClearance, float waterSurface, float surfaceClearance, float moveSpeed, float verticalSpeed, float turnSpeed);
