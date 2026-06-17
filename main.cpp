@@ -21,6 +21,7 @@ static constexpr float kCameraClearance = 0.6f;
 static constexpr float kMoveSpeed = 9.0f;
 static constexpr float kVerticalSpeed = 6.0f;
 static constexpr float kTurnSpeed = 1.6f;
+static constexpr float kSurfaceClearance = 0.45f;
 
 using GLuint = unsigned int;
 using GLint = int;
@@ -45,6 +46,8 @@ static constexpr GLenum kGL_DEPTH_TEST = 0x0B71;
 static constexpr GLenum kGL_BLEND = 0x0BE2;
 static constexpr GLenum kGL_SRC_ALPHA = 0x0302;
 static constexpr GLenum kGL_ONE_MINUS_SRC_ALPHA = 0x0303;
+static constexpr GLenum kGL_ELEMENT_ARRAY_BUFFER = 0x8893;
+static constexpr GLenum kGL_UNSIGNED_INT = 0x1405;
 
 using MyGLCreateShaderProc = GLuint(__stdcall *)(GLenum);
 using MyGLShaderSourceProc = void(__stdcall *)(GLuint, GLsizei, const GLchar *const *, const GLint *);
@@ -70,6 +73,9 @@ using MyGLGetUniformLocationProc = GLint(__stdcall *)(GLuint, const GLchar *);
 using MyGLUniform1fProc = void(__stdcall *)(GLint, GLfloat);
 using MyGLUniform3fProc = void(__stdcall *)(GLint, GLfloat, GLfloat, GLfloat);
 using MyGLUniformMatrix4fvProc = void(__stdcall *)(GLint, GLsizei, GLboolean, const GLfloat *);
+using MyGLDrawElementsProc = void(__stdcall *)(GLenum, GLsizei, GLenum, const void *);
+using MyGLDeleteBuffersProc = void(__stdcall *)(GLsizei, const GLuint *);
+using MyGLDeleteVertexArraysProc = void(__stdcall *)(GLsizei, const GLuint *);
 
 MyGLCreateShaderProc glCreateShader_ = nullptr;
 MyGLShaderSourceProc glShaderSource_ = nullptr;
@@ -95,6 +101,9 @@ MyGLGetUniformLocationProc glGetUniformLocation_ = nullptr;
 MyGLUniform1fProc glUniform1f_ = nullptr;
 MyGLUniform3fProc glUniform3f_ = nullptr;
 MyGLUniformMatrix4fvProc glUniformMatrix4fv_ = nullptr;
+MyGLDrawElementsProc glDrawElements_ = nullptr;
+MyGLDeleteBuffersProc glDeleteBuffers_ = nullptr;
+MyGLDeleteVertexArraysProc glDeleteVertexArrays_ = nullptr;
 
 struct Mat4 {
 	float m[16]{};
@@ -114,6 +123,7 @@ static GLint g_uWaterLevel = -1;
 static GLint g_uFogDensity = -1;
 static GLint g_uBaseColor = -1;
 static GLint g_uDeepColor = -1;
+static GLint g_uTerrainCameraPos = -1;
 static GLint g_uWaterViewProj = -1;
 static GLint g_uWaterTime = -1;
 static GLint g_uWaterSurfaceLevel = -1;
@@ -218,6 +228,9 @@ static void loadGLFunctions() {
 	glUniform1f_ = reinterpret_cast<MyGLUniform1fProc>(load("glUniform1f"));
 	glUniform3f_ = reinterpret_cast<MyGLUniform3fProc>(load("glUniform3f"));
 	glUniformMatrix4fv_ = reinterpret_cast<MyGLUniformMatrix4fvProc>(load("glUniformMatrix4fv"));
+	glDrawElements_ = reinterpret_cast<MyGLDrawElementsProc>(load("glDrawElements"));
+	glDeleteBuffers_ = reinterpret_cast<MyGLDeleteBuffersProc>(load("glDeleteBuffers"));
+	glDeleteVertexArrays_ = reinterpret_cast<MyGLDeleteVertexArraysProc>(load("glDeleteVertexArrays"));
 }
 
 static GLuint compileShader(GLenum type, const char *source) {
@@ -388,22 +401,16 @@ static void initScene() {
 #version 330 core
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
-layout(location = 2) in float aFoam;
 
 uniform mat4 uViewProj;
-uniform float uTime;
 
 out vec3 vWorldPos;
 out vec3 vNormal;
-out float vFoam;
 
 void main() {
-    vec3 pos = aPos;
-    vec3 normal = normalize(aNormal);
-    vWorldPos = pos;
-    vNormal = normal;
-    vFoam = aFoam;
-    gl_Position = uViewProj * vec4(pos, 1.0);
+    vWorldPos = aPos;
+    vNormal = normalize(aNormal);
+    gl_Position = uViewProj * vec4(aPos, 1.0);
 }
 )GLSL";
 
@@ -411,11 +418,11 @@ void main() {
 #version 330 core
 in vec3 vWorldPos;
 in vec3 vNormal;
-in float vFoam;
 
 uniform float uTime;
 uniform float uWaterLevel;
 uniform float uFogDensity;
+uniform vec3 uCameraPos;
 uniform vec3 uBaseColor;
 uniform vec3 uDeepColor;
 
@@ -425,17 +432,35 @@ void main() {
     vec3 N = normalize(vNormal);
     vec3 L = normalize(vec3(-0.2, 1.0, 0.15));
     float diffuse = max(dot(N, L), 0.0);
-    float ambient = 0.16;
-    float foam = smoothstep(0.45, 0.92, vFoam + max(vWorldPos.y - (-8.0), 0.0) * 0.02);
-    float depthFactor = clamp((uWaterLevel - vWorldPos.y) / 22.0, 0.0, 1.0);
-    float fog = 1.0 - exp(-uFogDensity * depthFactor * depthFactor * 18.0);
-    vec3 waterScatter = mix(vec3(0.06, 0.22, 0.32), vec3(0.01, 0.08, 0.14), depthFactor);
-    vec3 lit = uBaseColor * (ambient + diffuse * 0.95);
-    lit = mix(lit, uDeepColor, fog);
-    lit = mix(lit, waterScatter, clamp(depthFactor * 0.55, 0.0, 1.0));
-    lit += foam * vec3(0.07, 0.12, 0.13);
-    float caustic = 0.5 + 0.5 * sin(vWorldPos.x * 0.9 + uTime * 1.9) * sin(vWorldPos.z * 0.8 - uTime * 1.4);
-    lit += caustic * (1.0 - depthFactor) * 0.04;
+    float ambient = 0.14;
+
+    float heightT = clamp((vWorldPos.y + 11.0) / 9.0, 0.0, 1.0);
+    float slope = 1.0 - clamp(N.y, 0.0, 1.0);
+    vec3 mud = vec3(0.20, 0.17, 0.11);
+    vec3 sand = uBaseColor;
+    vec3 rock = vec3(0.30, 0.28, 0.25);
+    vec3 albedo = mix(mud, sand, smoothstep(0.15, 0.75, heightT));
+    albedo = mix(albedo, rock, smoothstep(0.18, 0.55, slope));
+
+    float waterDepth = clamp((uWaterLevel - vWorldPos.y) / 22.0, 0.0, 1.0);
+    float dist = length(uCameraPos - vWorldPos);
+    float viewFog = 1.0 - exp(-uFogDensity * dist * 0.11);
+    float depthFog = 1.0 - exp(-uFogDensity * waterDepth * waterDepth * 18.0);
+    float fog = clamp(max(viewFog, depthFog), 0.0, 1.0);
+
+    vec3 waterScatter = mix(vec3(0.06, 0.22, 0.32), vec3(0.01, 0.08, 0.14), waterDepth);
+    vec3 lit = albedo * (ambient + diffuse * 0.92);
+    lit = mix(lit, uDeepColor, fog * 0.85);
+    lit = mix(lit, waterScatter, clamp(waterDepth * 0.5, 0.0, 1.0));
+
+    float foam = smoothstep(0.42, 0.88, heightT + max(vWorldPos.y - (-7.5), 0.0) * 0.03);
+    lit += foam * vec3(0.06, 0.11, 0.12);
+
+    vec2 causticUV = vWorldPos.xz - L.xz * vWorldPos.y * 0.22;
+    float caustic = 0.5 + 0.5 * sin(causticUV.x * 1.1 + uTime * 1.9)
+                          * sin(causticUV.y * 0.95 - uTime * 1.4);
+    lit += caustic * (1.0 - waterDepth) * (1.0 - fog) * 0.05;
+
     FragColor = vec4(lit, 1.0);
 }
 )GLSL";
@@ -447,6 +472,7 @@ void main() {
 	g_uFogDensity = glGetUniformLocation_(g_program, "uFogDensity");
 	g_uBaseColor = glGetUniformLocation_(g_program, "uBaseColor");
 	g_uDeepColor = glGetUniformLocation_(g_program, "uDeepColor");
+	g_uTerrainCameraPos = glGetUniformLocation_(g_program, "uCameraPos");
  buildTerrain(g_terrain);
 	initWaterScene();
 	glEnable(kGL_DEPTH_TEST);
@@ -458,7 +484,7 @@ static void resizeViewport(int width, int height) {
 }
 
 static void updateInput(float dt) {
-   updateCamera(g_camera, g_input, dt, terrainHeight, 0.0f, kTerrainWidth, kTerrainDepth, kCameraClearance, kMoveSpeed, kVerticalSpeed, kTurnSpeed);
+   updateCamera(g_camera, g_input, dt, terrainHeight, 0.0f, kTerrainWidth, kTerrainDepth, kCameraClearance, g_waterLevel, kSurfaceClearance, kMoveSpeed, kVerticalSpeed, kTurnSpeed);
 
 	if (GetAsyncKeyState(VK_PRIOR) & 0x8000) g_waterLevel += 1.2f * dt;
 	if (GetAsyncKeyState(VK_NEXT) & 0x8000) g_waterLevel -= 1.2f * dt;
@@ -489,9 +515,10 @@ static void renderFrame() {
 	glUniform1f_(g_uFogDensity, g_fogDensity);
 	glUniform3f_(g_uBaseColor, 0.55f, 0.46f, 0.26f);
 	glUniform3f_(g_uDeepColor, 0.02f, 0.11f, 0.16f);
+	glUniform3f_(g_uTerrainCameraPos, g_camera.x, g_camera.y, g_camera.z);
 
 	glBindVertexArray_(g_terrain.vao);
-	glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(g_terrain.count));
+	glDrawElements_(kGL_TRIANGLES, static_cast<GLsizei>(g_terrain.indexCount), kGL_UNSIGNED_INT, nullptr);
 	glBindVertexArray_(0);
 
 	glEnable(kGL_BLEND);

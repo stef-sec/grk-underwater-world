@@ -7,7 +7,8 @@ using GLuint = unsigned int;
 struct TerrainGPU {
     GLuint vao = 0;
     GLuint vbo = 0;
-    GLuint count = 0;
+    GLuint ebo = 0;
+    GLuint indexCount = 0;
 };
 
 constexpr float kTerrainWidth = 60.0f;

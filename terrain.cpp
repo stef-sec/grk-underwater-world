@@ -19,6 +19,8 @@ using MyGLGenVertexArraysProc = void(__stdcall *)(GLsizei, GLuint *);
 using MyGLBindVertexArrayProc = void(__stdcall *)(GLuint);
 using MyGLEnableVertexAttribArrayProc = void(__stdcall *)(GLuint);
 using MyGLVertexAttribPointerProc = void(__stdcall *)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
+using MyGLDeleteBuffersProc = void(__stdcall *)(GLsizei, const GLuint *);
+using MyGLDeleteVertexArraysProc = void(__stdcall *)(GLsizei, const GLuint *);
 
 extern MyGLGenBuffersProc glGenBuffers_;
 extern MyGLBindBufferProc glBindBuffer_;
@@ -27,15 +29,18 @@ extern MyGLGenVertexArraysProc glGenVertexArrays_;
 extern MyGLBindVertexArrayProc glBindVertexArray_;
 extern MyGLEnableVertexAttribArrayProc glEnableVertexAttribArray_;
 extern MyGLVertexAttribPointerProc glVertexAttribPointer_;
+extern MyGLDeleteBuffersProc glDeleteBuffers_;
+extern MyGLDeleteVertexArraysProc glDeleteVertexArrays_;
 
 static constexpr GLenum kGL_ARRAY_BUFFER = 0x8892;
+static constexpr GLenum kGL_ELEMENT_ARRAY_BUFFER = 0x8893;
 static constexpr GLenum kGL_STATIC_DRAW = 0x88E4;
 static constexpr GLenum kGL_FLOAT = 0x1406;
+static constexpr GLenum kGL_UNSIGNED_INT = 0x1405;
 
 struct Vertex {
     float px, py, pz;
     float nx, ny, nz;
-    float foam;
 };
 
 static float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
@@ -73,66 +78,108 @@ static float fbm(float x, float y) {
     return sum;
 }
 
-float terrainHeight(float x, float z, float time) {
+static float terrainHeightBase(float x, float z) {
     float n = fbm(x * 0.75f, z * 0.75f);
     float ridge = std::pow(std::fabs(0.5f - valueNoise(x * 1.7f, z * 1.7f)), 1.45f);
     float basinSource = 0.65f - valueNoise(x * 0.35f, z * 0.35f);
     float basin = -0.85f * std::pow(basinSource > 0.0f ? basinSource : 0.0f, 2.2f);
-    float base = -8.0f + n * 3.7f + ridge * 1.0f + basin * 2.4f;
-    return base + std::sin(x * 0.18f + time * 0.7f) * 0.10f + std::cos(z * 0.16f - time * 0.5f) * 0.08f;
+    return -8.0f + n * 3.7f + ridge * 1.0f + basin * 2.4f;
+}
+
+float terrainHeight(float x, float z, float time) {
+    (void)time;
+    return terrainHeightBase(x, z);
 }
 
 void buildTerrain(TerrainGPU &terrain) {
     constexpr int gridX = 180;
-    constexpr int gridY = 140;
-    std::vector<Vertex> vertices;
-    vertices.reserve((gridX - 1) * (gridY - 1) * 6);
+    constexpr int gridZ = 140;
+    const float cellW = kTerrainWidth / static_cast<float>(gridX - 1);
+    const float cellD = kTerrainDepth / static_cast<float>(gridZ - 1);
 
-    for (int z = 0; z < gridY - 1; ++z) {
-        for (int x = 0; x < gridX - 1; ++x) {
-            auto sample = [&](int ix, int iz) {
-                float fx = (static_cast<float>(ix) / (gridX - 1) - 0.5f) * kTerrainWidth;
-                float fz = (static_cast<float>(iz) / (gridY - 1) - 0.5f) * kTerrainDepth;
-                float h = terrainHeight(fx, fz, 0.0f);
-                float slopeX = terrainHeight(fx + 0.3f, fz, 0.0f) - terrainHeight(fx - 0.3f, fz, 0.0f);
-                float slopeZ = terrainHeight(fx, fz + 0.3f, 0.0f) - terrainHeight(fx, fz - 0.3f, 0.0f);
-                float len = std::sqrt(slopeX * slopeX + 0.9f * 0.9f + slopeZ * slopeZ);
-                float nx = -slopeX / len;
-                float ny = 0.9f / len;
-                float nz = -slopeZ / len;
-                float foam = clampf((h + 8.0f) / 6.0f, 0.0f, 1.0f);
-                return Vertex{fx, h, fz, nx, ny, nz, foam};
-            };
-
-            Vertex v0 = sample(x, z);
-            Vertex v1 = sample(x + 1, z);
-            Vertex v2 = sample(x, z + 1);
-            Vertex v3 = sample(x + 1, z + 1);
-
-            vertices.push_back(v0);
-            vertices.push_back(v2);
-            vertices.push_back(v1);
-            vertices.push_back(v1);
-            vertices.push_back(v2);
-            vertices.push_back(v3);
+    std::vector<float> heights(static_cast<size_t>(gridX * gridZ));
+    for (int z = 0; z < gridZ; ++z) {
+        for (int x = 0; x < gridX; ++x) {
+            float fx = (static_cast<float>(x) / static_cast<float>(gridX - 1) - 0.5f) * kTerrainWidth;
+            float fz = (static_cast<float>(z) / static_cast<float>(gridZ - 1) - 0.5f) * kTerrainDepth;
+            heights[static_cast<size_t>(z * gridX + x)] = terrainHeightBase(fx, fz);
         }
     }
 
-    terrain.count = static_cast<GLuint>(vertices.size());
+    auto sampleHeight = [&](int x, int z) -> float {
+        x = x < 0 ? 0 : (x >= gridX ? gridX - 1 : x);
+        z = z < 0 ? 0 : (z >= gridZ ? gridZ - 1 : z);
+        return heights[static_cast<size_t>(z * gridX + x)];
+    };
+
+    std::vector<Vertex> vertices(static_cast<size_t>(gridX * gridZ));
+    for (int z = 0; z < gridZ; ++z) {
+        for (int x = 0; x < gridX; ++x) {
+            float fx = (static_cast<float>(x) / static_cast<float>(gridX - 1) - 0.5f) * kTerrainWidth;
+            float fz = (static_cast<float>(z) / static_cast<float>(gridZ - 1) - 0.5f) * kTerrainDepth;
+            float h = heights[static_cast<size_t>(z * gridX + x)];
+
+            float slopeX = (sampleHeight(x + 1, z) - sampleHeight(x - 1, z)) / (2.0f * cellW);
+            float slopeZ = (sampleHeight(x, z + 1) - sampleHeight(x, z - 1)) / (2.0f * cellD);
+            float nx = -slopeX;
+            float ny = 1.0f;
+            float nz = -slopeZ;
+            float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            if (len > 0.00001f) {
+                nx /= len;
+                ny /= len;
+                nz /= len;
+            } else {
+                nx = 0.0f;
+                ny = 1.0f;
+                nz = 0.0f;
+            }
+
+            vertices[static_cast<size_t>(z * gridX + x)] = Vertex{fx, h, fz, nx, ny, nz};
+        }
+    }
+
+    std::vector<uint32_t> indices;
+    indices.reserve(static_cast<size_t>((gridX - 1) * (gridZ - 1) * 6));
+    for (int z = 0; z < gridZ - 1; ++z) {
+        for (int x = 0; x < gridX - 1; ++x) {
+            uint32_t i0 = static_cast<uint32_t>(z * gridX + x);
+            uint32_t i1 = i0 + 1u;
+            uint32_t i2 = i0 + static_cast<uint32_t>(gridX);
+            uint32_t i3 = i2 + 1u;
+            indices.push_back(i0);
+            indices.push_back(i2);
+            indices.push_back(i1);
+            indices.push_back(i1);
+            indices.push_back(i2);
+            indices.push_back(i3);
+        }
+    }
+
+    terrain.indexCount = static_cast<GLuint>(indices.size());
+
     glGenVertexArrays_(1, &terrain.vao);
     glBindVertexArray_(terrain.vao);
+
     glGenBuffers_(1, &terrain.vbo);
     glBindBuffer_(kGL_ARRAY_BUFFER, terrain.vbo);
     glBufferData_(kGL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(Vertex)), vertices.data(), kGL_STATIC_DRAW);
+
+    glGenBuffers_(1, &terrain.ebo);
+    glBindBuffer_(kGL_ELEMENT_ARRAY_BUFFER, terrain.ebo);
+    glBufferData_(kGL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size() * sizeof(uint32_t)), indices.data(), kGL_STATIC_DRAW);
+
     glEnableVertexAttribArray_(0);
     glVertexAttribPointer_(0, 3, kGL_FLOAT, 0, sizeof(Vertex), reinterpret_cast<void *>(0));
     glEnableVertexAttribArray_(1);
     glVertexAttribPointer_(1, 3, kGL_FLOAT, 0, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, nx)));
-    glEnableVertexAttribArray_(2);
-    glVertexAttribPointer_(2, 1, kGL_FLOAT, 0, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, foam)));
+
     glBindVertexArray_(0);
 }
 
 void destroyTerrain(TerrainGPU &terrain) {
+    if (terrain.ebo) glDeleteBuffers_(1, &terrain.ebo);
+    if (terrain.vbo) glDeleteBuffers_(1, &terrain.vbo);
+    if (terrain.vao) glDeleteVertexArrays_(1, &terrain.vao);
     terrain = {};
 }

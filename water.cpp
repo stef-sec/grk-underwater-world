@@ -16,6 +16,8 @@ using MyGLGenVertexArraysProc = void(__stdcall *)(GLsizei, GLuint *);
 using MyGLBindVertexArrayProc = void(__stdcall *)(GLuint);
 using MyGLEnableVertexAttribArrayProc = void(__stdcall *)(GLuint);
 using MyGLVertexAttribPointerProc = void(__stdcall *)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
+using MyGLDeleteBuffersProc = void(__stdcall *)(GLsizei, const GLuint *);
+using MyGLDeleteVertexArraysProc = void(__stdcall *)(GLsizei, const GLuint *);
 
 extern MyGLGenBuffersProc glGenBuffers_;
 extern MyGLBindBufferProc glBindBuffer_;
@@ -24,6 +26,8 @@ extern MyGLGenVertexArraysProc glGenVertexArrays_;
 extern MyGLBindVertexArrayProc glBindVertexArray_;
 extern MyGLEnableVertexAttribArrayProc glEnableVertexAttribArray_;
 extern MyGLVertexAttribPointerProc glVertexAttribPointer_;
+extern MyGLDeleteBuffersProc glDeleteBuffers_;
+extern MyGLDeleteVertexArraysProc glDeleteVertexArrays_;
 
 static constexpr GLenum kGL_ARRAY_BUFFER = 0x8892;
 static constexpr GLenum kGL_STATIC_DRAW = 0x88E4;
@@ -76,5 +80,7 @@ void buildWater(WaterGPU &water) {
 }
 
 void destroyWater(WaterGPU &water) {
+    if (water.vbo) glDeleteBuffers_(1, &water.vbo);
+    if (water.vao) glDeleteVertexArrays_(1, &water.vao);
     water = {};
 }

@@ -15,7 +15,7 @@ Vec3 cameraRight(float yaw) {
     return {std::cos(yaw), 0.0f, -std::sin(yaw)};
 }
 
-void updateCamera(Camera &camera, const CameraInput &input, float dt, TerrainHeightFn terrainHeight, float terrainTime, float terrainWidth, float terrainDepth, float clearance, float moveSpeed, float verticalSpeed, float turnSpeed) {
+void updateCamera(Camera &camera, const CameraInput &input, float dt, TerrainHeightFn terrainHeight, float terrainTime, float terrainWidth, float terrainDepth, float groundClearance, float waterSurface, float surfaceClearance, float moveSpeed, float verticalSpeed, float turnSpeed) {
     camera.yaw += (input.turnRight ? 1.0f : 0.0f) * turnSpeed * dt;
     camera.yaw -= (input.turnLeft ? 1.0f : 0.0f) * turnSpeed * dt;
     camera.pitch += (input.turnUp ? 1.0f : 0.0f) * turnSpeed * dt;
@@ -50,6 +50,7 @@ void updateCamera(Camera &camera, const CameraInput &input, float dt, TerrainHei
     camera.z = clampf(camera.z, -halfD + 0.5f, halfD - 0.5f);
 
     float ground = terrainHeight(camera.x, camera.z, terrainTime);
-    float minY = ground + clearance;
-    if (camera.y < minY) camera.y = minY;
+    float minY = ground + groundClearance;
+    float maxY = waterSurface - surfaceClearance;
+    camera.y = clampf(camera.y, minY, maxY);
 }
