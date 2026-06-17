@@ -118,7 +118,7 @@ static GLint g_uWaterViewProj = -1;
 static GLint g_uWaterTime = -1;
 static GLint g_uWaterSurfaceLevel = -1;
 static GLint g_uWaterCameraY = -1;
-static GLint g_uWaterCameraY2 = -1;
+static GLint g_uWaterCameraPos = -1;
 static Camera g_camera;
 static CameraInput g_input;
 static float g_time = 0.0f;
@@ -267,12 +267,49 @@ uniform float uTime;
 uniform float uWaterSurfaceLevel;
 
 out float vWave;
+out vec3 vNormal;
+out vec3 vWorldPos;
+out float vSteepness;
+
+const float PI = 3.14159265;
+
+void gerstner(vec2 xz, vec2 dir, float amp, float wavelength, float speed, float steep,
+              inout vec3 pos, inout vec3 tangentX, inout vec3 tangentZ) {
+	dir = normalize(dir);
+	float k = 2.0 * PI / wavelength;
+	float omega = speed * sqrt(9.8 * k) * 0.38;
+	float phase = k * dot(dir, xz) - omega * uTime;
+	float c = cos(phase);
+	float s = sin(phase);
+
+	pos.x += steep * amp * dir.x * c;
+	pos.y += amp * s;
+	pos.z += steep * amp * dir.y * c;
+
+	tangentX.x += -steep * amp * dir.x * dir.x * k * s;
+	tangentX.y += amp * dir.x * k * c;
+	tangentX.z += -steep * amp * dir.y * dir.x * k * s;
+
+	tangentZ.x += -steep * amp * dir.x * dir.y * k * s;
+	tangentZ.y += amp * dir.y * k * c;
+	tangentZ.z += -steep * amp * dir.y * dir.y * k * s;
+}
 
 void main() {
 	vec3 pos = aPos;
-	float wave = sin(pos.x * 0.15 + uTime * 0.8) * 0.08 + cos(pos.z * 0.12 - uTime * 0.6) * 0.06;
-	pos.y = uWaterSurfaceLevel + wave;
-	vWave = wave;
+	vec3 tangentX = vec3(1.0, 0.0, 0.0);
+	vec3 tangentZ = vec3(0.0, 0.0, 1.0);
+
+	gerstner(pos.xz, vec2(1.0, 0.35),  0.28, 16.0, 0.75, 0.55, pos, tangentX, tangentZ);
+	gerstner(pos.xz, vec2(-0.55, 0.85), 0.20, 10.5, 0.95, 0.50, pos, tangentX, tangentZ);
+	gerstner(pos.xz, vec2(0.40, -0.92), 0.14,  7.0, 1.10, 0.42, pos, tangentX, tangentZ);
+	gerstner(pos.xz, vec2(0.85, 0.50),  0.07,  3.2, 1.35, 0.30, pos, tangentX, tangentZ);
+
+	pos.y += uWaterSurfaceLevel;
+	vWave = pos.y - uWaterSurfaceLevel;
+	vNormal = normalize(cross(tangentZ, tangentX));
+	vSteepness = 1.0 - vNormal.y;
+	vWorldPos = pos;
 	gl_Position = uViewProj * vec4(pos, 1.0);
 }
 )GLSL";
@@ -280,20 +317,59 @@ void main() {
 	const char *fs = R"GLSL(
 #version 330 core
 in float vWave;
+in vec3 vNormal;
+in vec3 vWorldPos;
+in float vSteepness;
 
 uniform float uWaterCameraY;
 uniform float uWaterSurfaceLevel;
-uniform float uWaterTime;
+uniform vec3 uCameraPos;
+uniform float uTime;
 
 out vec4 FragColor;
 
 void main() {
-	float alpha = 0.28;
-	float edge = smoothstep(0.0, 0.1, abs(vWave));
-	vec3 color = mix(vec3(0.08, 0.34, 0.42), vec3(0.03, 0.15, 0.26), edge);
+	vec3 N = normalize(vNormal);
+	vec3 L = normalize(vec3(-0.12, 0.95, 0.18));
+	vec3 V = normalize(uCameraPos - vWorldPos);
+	vec3 H = normalize(L + V);
+	vec3 R = reflect(-L, N);
+
+	float NdotL = max(dot(N, L), 0.0);
+	float NdotV = max(dot(N, V), 0.0);
+	float fresnel = pow(1.0 - NdotV, 3.2);
+
+	float diffuse = NdotL * 0.55 + 0.12;
+	float specSun = pow(max(dot(R, V), 0.0), 120.0);
+	float specBroad = pow(max(dot(N, H), 0.0), 32.0);
+
+	float crest = smoothstep(0.06, 0.32, vWave);
+	float trough = smoothstep(-0.28, -0.06, -vWave);
+	float foam = smoothstep(0.22, 0.55, vSteepness) * smoothstep(0.08, 0.25, vWave);
+
+	vec3 deepWater = vec3(0.03, 0.14, 0.22);
+	vec3 midWater = vec3(0.06, 0.28, 0.38);
+	vec3 shallow = vec3(0.12, 0.48, 0.55);
+	vec3 skyTint = vec3(0.18, 0.42, 0.52);
+
+	vec3 color = mix(deepWater, midWater, crest * 0.7 + diffuse * 0.3);
+	color = mix(color, shallow, crest * 0.65);
+	color = mix(color, skyTint, fresnel * 0.45);
+	color += specSun * 0.35;
+	color += specBroad * 0.12;
+	color += foam * vec3(0.14, 0.18, 0.16);
+	color = mix(color, deepWater * 1.15, trough * 0.35);
+
+	float caustic = 0.5 + 0.5 * sin(vWorldPos.x * 0.9 + uTime * 1.4)
+	                      * sin(vWorldPos.z * 0.75 - uTime * 1.1);
+	color += caustic * crest * 0.06;
+
+	float alpha = mix(0.42, 0.58, fresnel);
 	if (uWaterCameraY < uWaterSurfaceLevel) {
-		color += vec3(0.02, 0.06, 0.08);
+		color = mix(color, vec3(0.05, 0.20, 0.30), 0.25);
+		alpha = mix(0.50, 0.65, fresnel);
 	}
+
 	FragColor = vec4(color, alpha);
 }
 )GLSL";
@@ -303,6 +379,7 @@ void main() {
 	g_uWaterTime = glGetUniformLocation_(g_waterProgram, "uTime");
 	g_uWaterSurfaceLevel = glGetUniformLocation_(g_waterProgram, "uWaterSurfaceLevel");
 	g_uWaterCameraY = glGetUniformLocation_(g_waterProgram, "uWaterCameraY");
+	g_uWaterCameraPos = glGetUniformLocation_(g_waterProgram, "uCameraPos");
 	buildWater(g_water);
 }
 
@@ -419,15 +496,18 @@ static void renderFrame() {
 
 	glEnable(kGL_BLEND);
 	glBlendFunc(kGL_SRC_ALPHA, kGL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(0);
 	glUseProgram_(g_waterProgram);
 	glUniformMatrix4fv_(g_uWaterViewProj, 1, 0, vp.m);
 	glUniform1f_(g_uWaterTime, g_time);
 	glUniform1f_(g_uWaterSurfaceLevel, g_waterLevel);
 	glUniform1f_(g_uWaterCameraY, g_camera.y);
+	glUniform3f_(g_uWaterCameraPos, g_camera.x, g_camera.y, g_camera.z);
 	glBindVertexArray_(g_water.vao);
 	glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(g_water.count));
 	glBindVertexArray_(0);
 	glUseProgram_(0);
+	glDepthMask(1);
 	glDisable(kGL_BLEND);
 	glUseProgram_(0);
 	SwapBuffers(g_hdc);

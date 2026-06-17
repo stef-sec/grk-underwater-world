@@ -34,14 +34,35 @@ struct WaterVertex {
 };
 
 void buildWater(WaterGPU &water) {
-    std::vector<WaterVertex> vertices = {
-        {-30.0f, 0.8f, -24.0f},
-        {-30.0f, 0.8f, 24.0f},
-        {30.0f, 0.8f, -24.0f},
-        {30.0f, 0.8f, -24.0f},
-        {-30.0f, 0.8f, 24.0f},
-        {30.0f, 0.8f, 24.0f},
-    };
+    constexpr int gridX = 160;
+    constexpr int gridZ = 128;
+    constexpr float halfW = 30.0f;
+    constexpr float halfD = 24.0f;
+
+    std::vector<WaterVertex> vertices;
+    vertices.reserve((gridX - 1) * (gridZ - 1) * 6);
+
+    for (int z = 0; z < gridZ - 1; ++z) {
+        for (int x = 0; x < gridX - 1; ++x) {
+            auto vtx = [&](int ix, int iz) {
+                float fx = (static_cast<float>(ix) / static_cast<float>(gridX - 1) * 2.0f - 1.0f) * halfW;
+                float fz = (static_cast<float>(iz) / static_cast<float>(gridZ - 1) * 2.0f - 1.0f) * halfD;
+                return WaterVertex{fx, 0.0f, fz};
+            };
+
+            WaterVertex v0 = vtx(x, z);
+            WaterVertex v1 = vtx(x + 1, z);
+            WaterVertex v2 = vtx(x, z + 1);
+            WaterVertex v3 = vtx(x + 1, z + 1);
+
+            vertices.push_back(v0);
+            vertices.push_back(v2);
+            vertices.push_back(v1);
+            vertices.push_back(v1);
+            vertices.push_back(v2);
+            vertices.push_back(v3);
+        }
+    }
 
     water.count = static_cast<GLuint>(vertices.size());
     glGenVertexArrays_(1, &water.vao);
