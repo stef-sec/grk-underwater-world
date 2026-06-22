@@ -74,3 +74,8 @@ Testing/
 *.suo
 *.db
 *.opendb
+x64/
+**/x64/
+grk-unde.*/
+fix_merge.ps1
+main_faza2_backup.cpp
