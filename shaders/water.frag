@@ -51,9 +51,9 @@ void main() {
     color += foam * vec3(0.08, 0.10, 0.12);
     color = mix(color, deepWater * 1.2, trough * 0.35);
 
-    vec3 toSpot = vWorldPos - uSpotPos;
-    float dist = length(toSpot);
-    vec3 spotDir = normalize(-toSpot);
+    vec3 lightToFrag = vWorldPos - uSpotPos;
+    float dist = length(lightToFrag);
+    vec3 spotDir = normalize(lightToFrag);
     float theta = dot(spotDir, normalize(uSpotDir));
     float cone = clamp((theta - uSpotOuter) / max(uSpotInner - uSpotOuter, 0.0001), 0.0, 1.0);
     float attenuation = 1.0 / (1.0 + 0.045 * dist + 0.02 * dist * dist);

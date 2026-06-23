@@ -238,6 +238,7 @@ void drawSubmarine(const SubmarineGPU &submarine, const Mat4 &viewProj, const Ma
     glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(submarine.count));
     glBindVertexArray_(0);
     glUseProgram_(0);
+    glDisable(kGL_CULL_FACE);
 }
 
 void destroySubmarine(SubmarineGPU &submarine) {
