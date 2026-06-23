@@ -114,6 +114,35 @@ Mat4 mat4Model(Vec3 pos, float rotY, float scale) {
     return mat4Multiply(mat4Translation(pos), mat4Multiply(mat4RotationY(rotY), mat4Scale(scale)));
 }
 
+Mat4 mat4FromQuat(Quat q) {
+    q = quatNormalize(q);
+    const float xx = q.x * q.x;
+    const float yy = q.y * q.y;
+    const float zz = q.z * q.z;
+    const float xy = q.x * q.y;
+    const float xz = q.x * q.z;
+    const float yz = q.y * q.z;
+    const float wx = q.w * q.x;
+    const float wy = q.w * q.y;
+    const float wz = q.w * q.z;
+
+    Mat4 r = mat4Identity();
+    r.m[0] = 1.0f - 2.0f * (yy + zz);
+    r.m[1] = 2.0f * (xy + wz);
+    r.m[2] = 2.0f * (xz - wy);
+    r.m[4] = 2.0f * (xy - wz);
+    r.m[5] = 1.0f - 2.0f * (xx + zz);
+    r.m[6] = 2.0f * (yz + wx);
+    r.m[8] = 2.0f * (xz + wy);
+    r.m[9] = 2.0f * (yz - wx);
+    r.m[10] = 1.0f - 2.0f * (xx + yy);
+    return r;
+}
+
+Mat4 mat4ModelQuat(Vec3 pos, Quat rot, float scale) {
+    return mat4Multiply(mat4Translation(pos), mat4Multiply(mat4FromQuat(rot), mat4Scale(scale)));
+}
+
 Quat quatNormalize(Quat q) {
     float len = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
     if (len <= 0.00001f) return {0.0f, 0.0f, 0.0f, 1.0f};

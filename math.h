@@ -37,6 +37,8 @@ Mat4 mat4Translation(Vec3 t);
 Mat4 mat4Scale(float s);
 Mat4 mat4RotationY(float angle);
 Mat4 mat4Model(Vec3 pos, float rotY, float scale);
+Mat4 mat4FromQuat(Quat q);
+Mat4 mat4ModelQuat(Vec3 pos, Quat rot, float scale);
 
 Quat quatNormalize(Quat q);
 Quat quatMultiply(Quat a, Quat b);

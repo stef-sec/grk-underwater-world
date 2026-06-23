@@ -79,3 +79,7 @@ x64/
 grk-unde.*/
 fix_merge.ps1
 main_faza2_backup.cpp
+
+# 3D models (Wavefront OBJ) — not compiler objects
+!assets/models/
+!assets/models/*.obj

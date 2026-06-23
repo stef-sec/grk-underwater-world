@@ -9,6 +9,12 @@ uniform float uWaterSurfaceLevel;
 uniform vec3 uCameraPos;
 uniform vec3 uLightDir;
 uniform vec3 uLightColor;
+uniform vec3 uSpotPos;
+uniform vec3 uSpotDir;
+uniform vec3 uSpotColor;
+uniform float uSpotInner;
+uniform float uSpotOuter;
+uniform float uSpotIntensity;
 uniform float uTime;
 
 out vec4 FragColor;
@@ -44,6 +50,16 @@ void main() {
     color += specBroad * 0.08;
     color += foam * vec3(0.08, 0.10, 0.12);
     color = mix(color, deepWater * 1.2, trough * 0.35);
+
+    vec3 toSpot = vWorldPos - uSpotPos;
+    float dist = length(toSpot);
+    vec3 spotDir = normalize(-toSpot);
+    float theta = dot(spotDir, normalize(uSpotDir));
+    float cone = clamp((theta - uSpotOuter) / max(uSpotInner - uSpotOuter, 0.0001), 0.0, 1.0);
+    float attenuation = 1.0 / (1.0 + 0.045 * dist + 0.02 * dist * dist);
+    float spot = cone * attenuation * uSpotIntensity;
+    float spotSpec = pow(max(dot(reflect(-normalize(uSpotPos - vWorldPos), N), V), 0.0), 90.0);
+    color += uSpotColor * (spot * 0.18 + spotSpec * spot * 0.6);
 
     float alpha = mix(0.38, 0.55, fresnel);
     if (uWaterCameraY < uWaterSurfaceLevel) {

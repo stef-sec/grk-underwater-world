@@ -49,16 +49,27 @@ static std::string resolveAssetPath(const char *relative) {
     const std::string rel(relative);
     const std::string exeDir = getExeDir();
     const std::string candidates[] = {
-        rel,
         exeDir + "\\" + rel,
+        exeDir + "\\..\\" + rel,
         exeDir + "\\..\\..\\" + rel,
-        "C:\\Users\\Aliaksei\\Downloads\\uploads_files_2301153_seaweedList.obj",
-        "C:\\Users\\Aliaksei\\OneDrive\\Desktop\\computer graphic\\grk-underwater-world\\assets\\models\\seaweedList.obj",
+        rel,
     };
     for (const auto &candidate : candidates) {
         if (fileExists(candidate)) return candidate;
     }
-    return rel;
+    return exeDir + "\\" + rel;
+}
+
+static std::string resolveSeaweedModelPath() {
+    const char *names[] = {
+        "assets/models/seaweed.obj",
+        "assets/models/seaweedList.obj",
+    };
+    for (const char *name : names) {
+        const std::string path = resolveAssetPath(name);
+        if (fileExists(path)) return path;
+    }
+    return resolveAssetPath(names[0]);
 }
 
 static int parseObjIndex(const std::string &token, int count) {
@@ -189,8 +200,14 @@ void initSeaweed(SeaweedGPU &seaweed, float waterLevel) {
     seaweed.uLightDir = glGetUniformLocation_(seaweed.program, "uLightDir");
     seaweed.uDeepColor = glGetUniformLocation_(seaweed.program, "uDeepColor");
     seaweed.uColor = glGetUniformLocation_(seaweed.program, "uColor");
+    seaweed.uSpotPos = glGetUniformLocation_(seaweed.program, "uSpotPos");
+    seaweed.uSpotDir = glGetUniformLocation_(seaweed.program, "uSpotDir");
+    seaweed.uSpotColor = glGetUniformLocation_(seaweed.program, "uSpotColor");
+    seaweed.uSpotInner = glGetUniformLocation_(seaweed.program, "uSpotInner");
+    seaweed.uSpotOuter = glGetUniformLocation_(seaweed.program, "uSpotOuter");
+    seaweed.uSpotIntensity = glGetUniformLocation_(seaweed.program, "uSpotIntensity");
 
-    const std::string path = resolveAssetPath("assets/models/seaweedList.obj");
+    const std::string path = resolveSeaweedModelPath();
     std::vector<PropVertex> vertices;
     float minY = 0.0f;
     float maxY = 1.0f;
@@ -210,7 +227,7 @@ void initSeaweed(SeaweedGPU &seaweed, float waterLevel) {
     seaweed.loaded = true;
 }
 
-void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity) {
+void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity) {
     if (!seaweed.loaded || seaweed.instances.empty()) return;
 
     glDisable(kGL_CULL_FACE);
@@ -221,6 +238,12 @@ void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, fl
     glUniform1f_(seaweed.uFogDensity, fogDensity);
     glUniform3f_(seaweed.uLightDir, kMoonLightDir.x, kMoonLightDir.y, kMoonLightDir.z);
     glUniform3f_(seaweed.uDeepColor, kNightFogColor.x, kNightFogColor.y, kNightFogColor.z);
+    glUniform3f_(seaweed.uSpotPos, spotPos.x, spotPos.y, spotPos.z);
+    glUniform3f_(seaweed.uSpotDir, spotDir.x, spotDir.y, spotDir.z);
+    glUniform3f_(seaweed.uSpotColor, spotColor.x, spotColor.y, spotColor.z);
+    glUniform1f_(seaweed.uSpotInner, spotInner);
+    glUniform1f_(seaweed.uSpotOuter, spotOuter);
+    glUniform1f_(seaweed.uSpotIntensity, spotIntensity);
     glBindVertexArray_(seaweed.vao);
     for (const SeaweedInstance &inst : seaweed.instances) {
         const Mat4 model = mat4Model({inst.x, inst.y, inst.z}, inst.rotY, inst.scale);
@@ -239,3 +262,4 @@ void destroySeaweed(SeaweedGPU &seaweed) {
     if (seaweed.vao) glDeleteVertexArrays_(1, &seaweed.vao);
     seaweed = {};
 }
+

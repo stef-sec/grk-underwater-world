@@ -16,6 +16,12 @@ uniform vec3 uDeepColor;
 uniform vec3 uLightDir;
 uniform vec3 uLightColor;
 uniform vec3 uAmbient;
+uniform vec3 uSpotPos;
+uniform vec3 uSpotDir;
+uniform vec3 uSpotColor;
+uniform float uSpotInner;
+uniform float uSpotOuter;
+uniform float uSpotIntensity;
 uniform vec3 uSandBaseColor;
 uniform float uSandMetallic;
 uniform float uSandRoughness;
@@ -108,6 +114,15 @@ vec3 evaluatePBR(vec3 N, vec3 V, vec3 L, vec3 baseColor, float metallic, float r
     return (diffuse + specular) * NdotL * shadow;
 }
 
+float spotFalloff(vec3 worldPos, vec3 lightDir) {
+    vec3 lightToFrag = normalize(worldPos - uSpotPos);
+    float theta = dot(lightToFrag, normalize(lightDir));
+    float cone = clamp((theta - uSpotOuter) / max(uSpotInner - uSpotOuter, 0.0001), 0.0, 1.0);
+    float dist = length(worldPos - uSpotPos);
+    float attenuation = 1.0 / (1.0 + 0.04 * dist + 0.012 * dist * dist);
+    return cone * attenuation * uSpotIntensity;
+}
+
 float causticLayer(vec2 uv, float t, float scale, vec2 drift) {
     vec2 p = uv * scale + drift * t;
     return 0.5 + 0.5 * sin(p.x * 2.7 + sin(p.y * 1.9)) + 0.35 * sin(p.y * 3.1 - t * 0.6);
@@ -140,6 +155,25 @@ void main() {
     lit += uAmbient * mix(uRockBaseColor, uSandBaseColor, sandMask);
     lit *= mix(0.85, 1.0, dot(uLightColor, vec3(0.299, 0.587, 0.114)));
 
+    vec3 baseMix = mix(uRockBaseColor, uSandBaseColor, sandMask);
+    float metallicMix = mix(uRockMetallic, uSandMetallic, sandMask);
+    float roughnessMix = mix(uRockRoughness, uSandRoughness, sandMask);
+
+    float spotCone = spotFalloff(vWorldPos, uSpotDir);
+    vec3 spotL = normalize(uSpotPos - vWorldPos);
+    float flatness = smoothstep(0.45, 0.88, vGeomNormal.y);
+    float spotNdotL = max(dot(N, spotL), 0.0);
+    float geomNdotL = max(dot(vGeomNormal, spotL), 0.0);
+    // Flat seabed faces the beam poorly in classic Lambert terms; keep cone lighting there.
+    float spotReceiver = mix(max(spotNdotL, geomNdotL), max(max(spotNdotL, geomNdotL), 0.42), flatness);
+
+    vec3 spotPbr = evaluatePBR(N, V, spotL, baseMix, metallicMix, roughnessMix, 1.0);
+    vec3 spotDiffuse = baseMix * spotReceiver * spotCone * 0.22;
+    vec3 spotSpecular = spotPbr * spotCone;
+    vec3 spotContribution = uSpotColor * (spotDiffuse + spotSpecular * 0.35);
+
+    lit += spotContribution;
+
     float waterDepth = clamp((uWaterLevel - vWorldPos.y) / 22.0, 0.0, 1.0);
     float dist = length(uCameraPos - vWorldPos);
     float viewFog = 1.0 - exp(-uFogDensity * dist * 0.12);
@@ -149,6 +183,9 @@ void main() {
     vec3 waterScatter = mix(vec3(0.04, 0.14, 0.22), vec3(0.01, 0.05, 0.10), waterDepth);
     lit = mix(lit, uDeepColor, fog * 0.9);
     lit = mix(lit, waterScatter, clamp(waterDepth * 0.55, 0.0, 1.0));
+
+    // Keep spotlight readable on the seabed through underwater fog.
+    lit += spotContribution * flatness * (1.0 - fog * 0.25);
 
     vec2 causticUV = vWorldPos.xz - L.xz * vWorldPos.y * 0.18;
     float caustic = causticLayer(causticUV, uTime, 0.55, vec2(0.08, 0.06));

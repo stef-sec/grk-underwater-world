@@ -64,11 +64,12 @@ static float terrainHeightBase(float x, float z) {
     float ridge = std::pow(std::fabs(0.5f - valueNoise(x * 1.7f, z * 1.7f)), 1.45f);
     float basinSource = 0.65f - valueNoise(x * 0.35f, z * 0.35f);
     float basin = -0.85f * std::pow(basinSource > 0.0f ? basinSource : 0.0f, 2.2f);
-    return -8.0f + n * 3.7f + ridge * 1.0f + basin * 2.4f;
+    return -18.0f + n * 4.6f + ridge * 1.4f + basin * 3.3f;
 }
 
 float terrainHeight(float x, float z, float time) {
-    return terrainHeightBase(x, z) + std::sin(x * 0.22f + time * 0.7f) * 0.12f + std::cos(z * 0.19f - time * 0.5f) * 0.10f;
+    (void)time;
+    return terrainHeightBase(x, z);
 }
 
 void buildTerrain(TerrainGPU &terrain) {

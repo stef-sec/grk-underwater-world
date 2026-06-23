@@ -15,6 +15,7 @@
 #include "shader.h"
 #include "shadow.h"
 #include "skybox.h"
+#include "submarine.h"
 #include "terrain.h"
 #include "water.h"
 
@@ -29,6 +30,7 @@ static constexpr float kMoveSpeed = 9.0f;
 static constexpr float kVerticalSpeed = 6.0f;
 static constexpr float kTurnSpeed = 1.6f;
 static constexpr float kSurfaceClearance = 0.45f;
+static constexpr float kSubmarineScale = 0.018f;
 
 static HDC g_hdc = nullptr;
 static HGLRC g_hrc = nullptr;
@@ -40,6 +42,7 @@ static WaterGPU g_water;
 static SkyboxGPU g_skybox;
 static ShadowGPU g_shadow;
 static SeaweedGPU g_seaweed;
+static SubmarineGPU g_submarine;
 
 static GLuint g_terrainProgram = 0;
 static GLuint g_waterProgram = 0;
@@ -63,6 +66,12 @@ static GLint g_uTerrainRockMetallic = -1;
 static GLint g_uTerrainRockRoughness = -1;
 static GLint g_uTerrainNormalStrength = -1;
 static GLint g_uTerrainDebugMaterials = -1;
+static GLint g_uTerrainSpotPos = -1;
+static GLint g_uTerrainSpotDir = -1;
+static GLint g_uTerrainSpotColor = -1;
+static GLint g_uTerrainSpotInner = -1;
+static GLint g_uTerrainSpotOuter = -1;
+static GLint g_uTerrainSpotIntensity = -1;
 
 static GLint g_uWaterViewProj = -1;
 static GLint g_uWaterTime = -1;
@@ -71,6 +80,12 @@ static GLint g_uWaterCameraY = -1;
 static GLint g_uWaterCameraPos = -1;
 static GLint g_uWaterLightDir = -1;
 static GLint g_uWaterLightColor = -1;
+static GLint g_uWaterSpotPos = -1;
+static GLint g_uWaterSpotDir = -1;
+static GLint g_uWaterSpotColor = -1;
+static GLint g_uWaterSpotInner = -1;
+static GLint g_uWaterSpotOuter = -1;
+static GLint g_uWaterSpotIntensity = -1;
 
 static Camera g_camera;
 static CameraInput g_input;
@@ -89,14 +104,74 @@ static Material g_rock{{0.35f, 0.32f, 0.28f}, 0.05f, 0.72f};
 static int g_activeMaterial = 0;
 static float g_normalStrength = 1.0f;
 static bool g_debugMaterials = false;
+static bool g_spotlightEnabled = true;
+static bool g_thirdPerson = false;
+
+static constexpr float kChaseDistance = 5.5f;
+static constexpr float kChaseHeight = 2.4f;
+static constexpr float kSpotForward = 0.95f;
+static constexpr float kSpotUp = 0.12f;
+// --- Submarine MODEL orientation (edit here; spotlight is separate) ---
+// Axis: {1,0,0}=pitch X, {0,1,0}=yaw Y, {0,0,1}=roll Z. Angle in radians.
+// Examples: -PI/2 on X, PI on Y, PI/2 on X + PI on Y via quatMultiply.
+static const Quat kSubMeshAxisFix = quatMultiply(
+    quatMultiply(
+        quatFromAxisAngle({0.0f, 1.0f, 0.0f}, 3.14159265f * 1.5f),
+        quatFromAxisAngle({0.0f, 0.0f, 1.0f}, 3.14159265f)
+    ),
+    quatFromAxisAngle({1.0f, 0.0f, 0.0f}, 3.14159265f)
+);
+// Model scale: kSubMeshAxisFix block above; also kSubmarineScale (line ~33).
+// Vertical centering: submarineModelMatrix() uses (minY+maxY)*0.5f offset.
+
+static Vec3 submarineWorldPos(const Camera &camera) {
+    return {camera.x, camera.y, camera.z};
+}
+
+static Quat submarineOrientation() {
+    return quatNormalize(quatMultiply(g_camera.orientation, kSubMeshAxisFix));
+}
+
+// Spotlight follows camera / movement direction (not mesh axis fix).
+static void submarineSpotlight(const Vec3 &worldPos, Vec3 &outPos, Vec3 &outDir) {
+    const Vec3 forward = cameraForward(g_camera);
+    const Vec3 up = quatRotate(g_camera.orientation, {0.0f, 1.0f, 0.0f});
+    outPos = vec3Add(worldPos, vec3Add(vec3Scale(forward, kSpotForward), vec3Scale(up, kSpotUp)));
+    outDir = vec3Normalize(vec3Add(forward, {0.0f, -0.22f, 0.0f}));
+}
+
+static Mat4 submarineModelMatrix(const Vec3 &worldPos) {
+    const float centerY = (g_submarine.minY + g_submarine.maxY) * 0.5f;
+    const Mat4 body = mat4ModelQuat(worldPos, submarineOrientation(), kSubmarineScale);
+    const Mat4 center = mat4Translation({0.0f, -centerY, 0.0f});
+    return mat4Multiply(body, center);
+}
+
+static void setThirdPersonMode(bool enabled) {
+    g_thirdPerson = enabled;
+}
+
+static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
+    const Vec3 forward = cameraForward(g_camera);
+    if (!g_thirdPerson) {
+        outEye = subPos;
+        outTarget = vec3Add(subPos, forward);
+        return;
+    }
+
+    const Vec3 back = vec3Scale(forward, -kChaseDistance);
+    outEye = vec3Add(vec3Add(subPos, back), Vec3{0.0f, kChaseHeight, 0.0f});
+    outTarget = vec3Add(subPos, vec3Scale(forward, 1.2f));
+}
 
 static void updateWindowTitle() {
     const Material &m = g_activeMaterial == 0 ? g_sand : g_rock;
     const char *name = g_activeMaterial == 0 ? "Piasek" : "Skala";
     char title[512];
     snprintf(title, sizeof(title),
-        "GRK Underwater World | Mat: %s (1/2) | Rough=%.2f Metal=%.2f | Normal=%.2f | H debug | C close-up",
-        name, m.roughness, m.metallic, g_normalStrength);
+        "GRK Underwater World | %s | Mat: %s (1/2) | Rough=%.2f | T view | L spotlight",
+        g_thirdPerson ? "3rd person" : "1st person",
+        name, m.roughness);
     SetWindowTextA(g_hwnd, title);
 }
 
@@ -121,6 +196,12 @@ static void initPrograms() {
     g_uTerrainRockRoughness = glGetUniformLocation_(g_terrainProgram, "uRockRoughness");
     g_uTerrainNormalStrength = glGetUniformLocation_(g_terrainProgram, "uNormalStrength");
     g_uTerrainDebugMaterials = glGetUniformLocation_(g_terrainProgram, "uDebugMaterials");
+    g_uTerrainSpotPos = glGetUniformLocation_(g_terrainProgram, "uSpotPos");
+    g_uTerrainSpotDir = glGetUniformLocation_(g_terrainProgram, "uSpotDir");
+    g_uTerrainSpotColor = glGetUniformLocation_(g_terrainProgram, "uSpotColor");
+    g_uTerrainSpotInner = glGetUniformLocation_(g_terrainProgram, "uSpotInner");
+    g_uTerrainSpotOuter = glGetUniformLocation_(g_terrainProgram, "uSpotOuter");
+    g_uTerrainSpotIntensity = glGetUniformLocation_(g_terrainProgram, "uSpotIntensity");
 
     g_waterProgram = createProgramFromFiles("shaders/water.vert", "shaders/water.frag");
     g_uWaterViewProj = glGetUniformLocation_(g_waterProgram, "uViewProj");
@@ -130,6 +211,12 @@ static void initPrograms() {
     g_uWaterCameraPos = glGetUniformLocation_(g_waterProgram, "uCameraPos");
     g_uWaterLightDir = glGetUniformLocation_(g_waterProgram, "uLightDir");
     g_uWaterLightColor = glGetUniformLocation_(g_waterProgram, "uLightColor");
+    g_uWaterSpotPos = glGetUniformLocation_(g_waterProgram, "uSpotPos");
+    g_uWaterSpotDir = glGetUniformLocation_(g_waterProgram, "uSpotDir");
+    g_uWaterSpotColor = glGetUniformLocation_(g_waterProgram, "uSpotColor");
+    g_uWaterSpotInner = glGetUniformLocation_(g_waterProgram, "uSpotInner");
+    g_uWaterSpotOuter = glGetUniformLocation_(g_waterProgram, "uSpotOuter");
+    g_uWaterSpotIntensity = glGetUniformLocation_(g_waterProgram, "uSpotIntensity");
 }
 
 static void initScene() {
@@ -139,6 +226,7 @@ static void initScene() {
     initShadow(g_shadow, 2048);
     initPrograms();
     initSeaweed(g_seaweed, g_waterLevel);
+    initSubmarine(g_submarine);
     glEnable(kGL_DEPTH_TEST);
 }
 
@@ -149,6 +237,17 @@ static void resizeViewport(int width, int height) {
 }
 
 static void updateInput(float dt) {
+    g_input.forward = (GetAsyncKeyState('W') & 0x8000) != 0;
+    g_input.backward = (GetAsyncKeyState('S') & 0x8000) != 0;
+    g_input.left = (GetAsyncKeyState('A') & 0x8000) != 0;
+    g_input.right = (GetAsyncKeyState('D') & 0x8000) != 0;
+    g_input.down = (GetAsyncKeyState('Q') & 0x8000) != 0;
+    g_input.up = (GetAsyncKeyState('E') & 0x8000) != 0;
+    g_input.turnLeft = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+    g_input.turnRight = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+    g_input.turnUp = (GetAsyncKeyState(VK_UP) & 0x8000) != 0;
+    g_input.turnDown = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0;
+
     updateCamera(g_camera, g_input, dt, terrainHeight, g_time, kTerrainWidth, kTerrainDepth, kCameraClearance, g_waterLevel, kSurfaceClearance, kMoveSpeed, kVerticalSpeed, kTurnSpeed);
 
     if (GetAsyncKeyState(VK_PRIOR) & 0x8000) g_waterLevel += 1.2f * dt;
@@ -164,9 +263,18 @@ static void renderFrame() {
     const int height = rc.bottom - rc.top;
     resizeViewport(width, height);
 
-    const Vec3 eye{g_camera.x, g_camera.y, g_camera.z};
-    const Vec3 forward = cameraForward(g_camera);
-    const Vec3 target = vec3Add(eye, forward);
+    const Vec3 subPos = submarineWorldPos(g_camera);
+    Vec3 eye{};
+    Vec3 target{};
+    buildViewCamera(subPos, eye, target);
+
+    Vec3 spotPos{};
+    Vec3 spotDir{};
+    submarineSpotlight(subPos, spotPos, spotDir);
+    const Vec3 spotColor = g_spotlightEnabled ? Vec3{0.82f, 0.90f, 1.0f} : Vec3{0.0f, 0.0f, 0.0f};
+    const float spotInner = std::cos(16.0f * 3.14159265f / 180.0f);
+    const float spotOuter = std::cos(28.0f * 3.14159265f / 180.0f);
+    const float spotIntensity = g_spotlightEnabled ? 220.0f : 0.0f;
     const Mat4 proj = mat4Perspective(60.0f * 3.14159265f / 180.0f, static_cast<float>(width) / static_cast<float>(height), 0.1f, 200.0f);
     const Mat4 view = mat4LookAt(eye, target, {0.0f, 1.0f, 0.0f});
     const Mat4 viewSky = mat4WithoutTranslation(view);
@@ -188,7 +296,7 @@ static void renderFrame() {
     glUniform1f_(g_uTerrainTime, g_time);
     glUniform1f_(g_uTerrainWaterLevel, g_waterLevel);
     glUniform1f_(g_uTerrainFogDensity, g_fogDensity);
-    glUniform3f_(g_uTerrainCameraPos, g_camera.x, g_camera.y, g_camera.z);
+    glUniform3f_(g_uTerrainCameraPos, eye.x, eye.y, eye.z);
     glUniform3f_(g_uTerrainDeepColor, kNightFogColor.x, kNightFogColor.y, kNightFogColor.z);
     glUniform3f_(g_uTerrainSandBaseColor, g_sand.baseColor[0], g_sand.baseColor[1], g_sand.baseColor[2]);
     glUniform1f_(g_uTerrainSandMetallic, g_sand.metallic);
@@ -201,6 +309,12 @@ static void renderFrame() {
     glUniform3f_(g_uTerrainLightDir, kMoonLightDir.x, kMoonLightDir.y, kMoonLightDir.z);
     glUniform3f_(g_uTerrainLightColor, kMoonLightColor.x, kMoonLightColor.y, kMoonLightColor.z);
     glUniform3f_(g_uTerrainAmbient, kNightAmbient.x, kNightAmbient.y, kNightAmbient.z);
+    glUniform3f_(g_uTerrainSpotPos, spotPos.x, spotPos.y, spotPos.z);
+    glUniform3f_(g_uTerrainSpotDir, spotDir.x, spotDir.y, spotDir.z);
+    glUniform3f_(g_uTerrainSpotColor, spotColor.x, spotColor.y, spotColor.z);
+    glUniform1f_(g_uTerrainSpotInner, spotInner);
+    glUniform1f_(g_uTerrainSpotOuter, spotOuter);
+    glUniform1f_(g_uTerrainSpotIntensity, spotIntensity);
     glActiveTexture_(kGL_TEXTURE0);
     glBindTexture_(kGL_TEXTURE_2D, g_shadow.depthMap);
     glUniform1i_(g_uTerrainShadowMap, 0);
@@ -208,7 +322,12 @@ static void renderFrame() {
     glDrawElements_(kGL_TRIANGLES, static_cast<GLsizei>(g_terrain.indexCount), kGL_UNSIGNED_INT, nullptr);
     glBindVertexArray_(0);
 
-    drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, g_fogDensity);
+    drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, g_fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
+
+    if (g_thirdPerson && g_submarine.loaded) {
+        const Mat4 subModel = submarineModelMatrix(subPos);
+        drawSubmarine(g_submarine, vp, subModel, eye, g_waterLevel, g_fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
+    }
 
     glEnable(kGL_BLEND);
     glBlendFunc(kGL_SRC_ALPHA, kGL_ONE_MINUS_SRC_ALPHA);
@@ -217,10 +336,16 @@ static void renderFrame() {
     glUniformMatrix4fv_(g_uWaterViewProj, 1, 0, vp.m);
     glUniform1f_(g_uWaterTime, g_time);
     glUniform1f_(g_uWaterSurfaceLevel, g_waterLevel);
-    glUniform1f_(g_uWaterCameraY, g_camera.y);
-    glUniform3f_(g_uWaterCameraPos, g_camera.x, g_camera.y, g_camera.z);
+    glUniform1f_(g_uWaterCameraY, eye.y);
+    glUniform3f_(g_uWaterCameraPos, eye.x, eye.y, eye.z);
     glUniform3f_(g_uWaterLightDir, kMoonLightDir.x, kMoonLightDir.y, kMoonLightDir.z);
     glUniform3f_(g_uWaterLightColor, kMoonLightColor.x, kMoonLightColor.y, kMoonLightColor.z);
+    glUniform3f_(g_uWaterSpotPos, spotPos.x, spotPos.y, spotPos.z);
+    glUniform3f_(g_uWaterSpotDir, spotDir.x, spotDir.y, spotDir.z);
+    glUniform3f_(g_uWaterSpotColor, spotColor.x, spotColor.y, spotColor.z);
+    glUniform1f_(g_uWaterSpotInner, spotInner);
+    glUniform1f_(g_uWaterSpotOuter, spotOuter);
+    glUniform1f_(g_uWaterSpotIntensity, spotIntensity);
     glBindVertexArray_(g_water.vao);
     glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(g_water.count));
     glBindVertexArray_(0);
@@ -245,10 +370,17 @@ static void handleMaterialKey(WPARAM key) {
     case 'B': g_normalStrength = clampf(g_normalStrength + 0.15f, 0.0f, 3.0f); break;
     case 'V': g_normalStrength = clampf(g_normalStrength - 0.15f, 0.0f, 3.0f); break;
     case 'H': g_debugMaterials = !g_debugMaterials; break;
+    case 'T':
+        setThirdPersonMode(!g_thirdPerson);
+        break;
+    case 'L':
+    case VK_F1:
+        g_spotlightEnabled = !g_spotlightEnabled;
+        break;
     case 'C':
         g_camera.x = 0.0f;
-        g_camera.y = -3.5f;
-        g_camera.z = 8.0f;
+        g_camera.y = -10.0f;
+        g_camera.z = 11.0f;
         g_camera.orientation = quatFromAxisAngle({0.0f, 1.0f, 0.0f}, 3.14159265f);
         break;
     default: return;
@@ -259,6 +391,9 @@ static void handleMaterialKey(WPARAM key) {
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_CLOSE:
+        g_running = false;
+        PostQuitMessage(0);
+        return 0;
     case WM_DESTROY:
         g_running = false;
         PostQuitMessage(0);
@@ -268,46 +403,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     case WM_KEYDOWN:
         switch (wParam) {
-        case 'W': g_input.forward = true; break;
-        case 'A': g_input.left = true; break;
-        case 'S': g_input.backward = true; break;
-        case 'D': g_input.right = true; break;
-        case 'Q': g_input.down = true; break;
-        case 'E': g_input.up = true; break;
-        case VK_LEFT: g_input.turnLeft = true; break;
-        case VK_RIGHT: g_input.turnRight = true; break;
-        case VK_UP: g_input.turnUp = true; break;
-        case VK_DOWN: g_input.turnDown = true; break;
-        case VK_ESCAPE: g_running = false; PostQuitMessage(0); break;
-        case '1':
-        case '2':
-        case 'R':
-        case 'F':
-        case 'M':
-        case 'N':
-        case 'B':
-        case 'V':
-        case 'H':
-        case 'C':
+        case VK_ESCAPE:
+            g_running = false;
+            PostQuitMessage(0);
+            break;
+        default:
             handleMaterialKey(static_cast<WPARAM>(wParam));
             break;
-        default: break;
         }
         return 0;
     case WM_KEYUP:
-        switch (wParam) {
-        case 'W': g_input.forward = false; break;
-        case 'A': g_input.left = false; break;
-        case 'S': g_input.backward = false; break;
-        case 'D': g_input.right = false; break;
-        case 'Q': g_input.down = false; break;
-        case 'E': g_input.up = false; break;
-        case VK_LEFT: g_input.turnLeft = false; break;
-        case VK_RIGHT: g_input.turnRight = false; break;
-        case VK_UP: g_input.turnUp = false; break;
-        case VK_DOWN: g_input.turnDown = false; break;
-        default: break;
-        }
         return 0;
     default:
         return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -379,6 +484,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     destroySkybox(g_skybox);
     destroyShadow(g_shadow);
     destroySeaweed(g_seaweed);
+    destroySubmarine(g_submarine);
     destroyWater(g_water);
     destroyTerrain(g_terrain);
     if (g_hrc) {

@@ -1,11 +1,13 @@
 @echo off
 setlocal
-set "SRC=C:\Users\Aliaksei\Downloads\uploads_files_2301153_seaweedList.obj"
-set "DST=%~dp0assets\models\seaweedList.obj"
-if not exist "%~dp0assets\models" mkdir "%~dp0assets\models"
-if not exist "%SRC%" (
-    echo Source not found: %SRC%
-    exit /b 1
+echo Place your seaweed OBJ in: %~dp0assets\models\seaweed.obj
+if exist "%~dp0assets\models\seaweed.obj" (
+    echo Found: assets\models\seaweed.obj
+    exit /b 0
 )
-copy /Y "%SRC%" "%DST%"
-echo Copied seaweed model to %DST%
+if exist "%~dp0assets\models\seaweedList.obj" (
+    echo Found: assets\models\seaweedList.obj
+    exit /b 0
+)
+echo Missing model. Copy seaweed.obj to assets\models\
+exit /b 1

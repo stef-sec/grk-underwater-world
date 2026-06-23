@@ -145,6 +145,7 @@
     <ClCompile Include="shader.cpp" />
     <ClCompile Include="shadow.cpp" />
     <ClCompile Include="skybox.cpp" />
+    <ClCompile Include="submarine.cpp" />
     <ClCompile Include="terrain.cpp" />
     <ClCompile Include="water.cpp" />
   </ItemGroup>
@@ -157,6 +158,7 @@
     <ClInclude Include="shader.h" />
     <ClInclude Include="shadow.h" />
     <ClInclude Include="skybox.h" />
+    <ClInclude Include="submarine.h" />
     <ClInclude Include="terrain.h" />
     <ClInclude Include="water.h" />
   </ItemGroup>
@@ -167,6 +169,8 @@
     <None Include="shaders\shadow.vert" />
     <None Include="shaders\skybox.frag" />
     <None Include="shaders\skybox.vert" />
+    <None Include="shaders\submarine.frag" />
+    <None Include="shaders\submarine.vert" />
     <None Include="shaders\terrain.frag" />
     <None Include="shaders\terrain.vert" />
     <None Include="shaders\water.frag" />
