@@ -7,6 +7,7 @@
 #include "shader.h"
 
 #include <cctype>
+#include <cstddef>
 #include <cstdio>
 #include <vector>
 
@@ -63,27 +64,41 @@ static const char *glyphRows(char c) {
     }
 }
 
-static void pushQuad(std::vector<HudVertex> &v, float x, float y, float w, float h, float r, float g, float b, float a) {
-    v.push_back({x, y, r, g, b, a});
-    v.push_back({x + w, y, r, g, b, a});
-    v.push_back({x + w, y + h, r, g, b, a});
-    v.push_back({x, y, r, g, b, a});
-    v.push_back({x + w, y + h, r, g, b, a});
-    v.push_back({x, y + h, r, g, b, a});
+static float pxToNdcX(float px, float width) {
+    return px / width * 2.0f - 1.0f;
 }
 
-static void pushText(std::vector<HudVertex> &v, const char *text, float x, float y, float scale, float r, float g, float b, float a) {
-    const float startX = x;
-    const float px = scale;
+static float pxToNdcY(float py, float height) {
+    return 1.0f - py / height * 2.0f;
+}
+
+static void pushQuadNdc(std::vector<HudVertex> &v, float px, float py, float pw, float ph,
+    float sw, float sh, float r, float g, float b, float a) {
+    const float x0 = pxToNdcX(px, sw);
+    const float x1 = pxToNdcX(px + pw, sw);
+    const float y0 = pxToNdcY(py, sh);
+    const float y1 = pxToNdcY(py + ph, sh);
+    v.push_back({x0, y0, r, g, b, a});
+    v.push_back({x1, y0, r, g, b, a});
+    v.push_back({x1, y1, r, g, b, a});
+    v.push_back({x0, y0, r, g, b, a});
+    v.push_back({x1, y1, r, g, b, a});
+    v.push_back({x0, y1, r, g, b, a});
+}
+
+static void pushTextNdc(std::vector<HudVertex> &v, const char *text, float px, float py, float scale,
+    float sw, float sh, float r, float g, float b, float a) {
+    const float startX = px;
+    const float pixel = scale;
     const float advance = 6.0f * scale;
     for (const char *p = text; *p; ++p) {
         if (*p == '\n') {
-            x = startX;
-            y += 9.0f * scale;
+            px = startX;
+            py += 9.0f * scale;
             continue;
         }
         if (*p == ' ') {
-            x += advance;
+            px += advance;
             continue;
         }
         const char *rows = glyphRows(*p);
@@ -91,20 +106,28 @@ static void pushText(std::vector<HudVertex> &v, const char *text, float x, float
             for (int row = 0; row < 7; ++row) {
                 for (int col = 0; col < 5; ++col) {
                     if (rows[row * 5 + col] == '1') {
-                        pushQuad(v, x + col * px, y + row * px, px, px, r, g, b, a);
+                        pushQuadNdc(v, px + col * pixel, py + row * pixel, pixel, pixel, sw, sh, r, g, b, a);
                     }
                 }
             }
         } else {
-            pushQuad(v, x, y + 2.0f * px, 4.0f * px, 3.0f * px, r, g, b, a);
+            pushQuadNdc(v, px, py + 2.0f * pixel, 4.0f * pixel, 3.0f * pixel, sw, sh, r, g, b, a);
         }
-        x += advance;
+        px += advance;
     }
+}
+
+void invalidateHudCache(HudGPU &hud) {
+    hud.cachedWidth = -1;
+    hud.cachedHeight = -1;
+    hud.cachedCollectedSamples = -1;
+    hud.cachedTotalSamples = -1;
+    hud.cachedVolumetricStrength = -1.0f;
 }
 
 void initHud(HudGPU &hud) {
     hud.program = createProgramFromFiles("shaders/hud.vert", "shaders/hud.frag");
-    hud.uScreenSize = glGetUniformLocation_(hud.program, "uScreenSize");
+    if (!hud.program) return;
 
     glGenVertexArrays_(1, &hud.vao);
     glBindVertexArray_(hud.vao);
@@ -121,6 +144,9 @@ void initHud(HudGPU &hud) {
 void drawHud(HudGPU &hud, int width, int height, bool thirdPerson, bool spotlightEnabled,
     bool volumetricEnabled, float volumetricStrength, int collectedSamples, int totalSamples) {
     if (!hud.program || width <= 0 || height <= 0) return;
+
+    const float sw = static_cast<float>(width);
+    const float sh = static_cast<float>(height);
 
     const bool dirty =
         hud.cachedWidth != width ||
@@ -148,11 +174,13 @@ void drawHud(HudGPU &hud, int width, int height, bool thirdPerson, bool spotligh
 
         std::vector<HudVertex> vertices;
         vertices.reserve(32000);
-        pushQuad(vertices, 10.0f, 10.0f, static_cast<float>(width) - 20.0f, 96.0f, 0.0f, 0.025f, 0.045f, 0.48f);
-        pushText(vertices, status, 18.0f, 18.0f, 2.0f, 0.70f, 0.92f, 1.0f, 0.92f);
+        pushQuadNdc(vertices, 10.0f, 10.0f, sw - 20.0f, 96.0f, sw, sh, 0.02f, 0.12f, 0.28f, 0.82f);
+        pushTextNdc(vertices, status, 18.0f, 18.0f, 2.0f, sw, sh, 0.85f, 0.95f, 1.0f, 1.0f);
 
+        glBindVertexArray_(hud.vao);
         glBindBuffer_(kGL_ARRAY_BUFFER, hud.vbo);
         glBufferData_(kGL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(HudVertex)), vertices.data(), kGL_DYNAMIC_DRAW);
+        glBindVertexArray_(0);
 
         hud.vertexCount = static_cast<GLsizei>(vertices.size());
         hud.cachedWidth = width;
@@ -164,13 +192,18 @@ void drawHud(HudGPU &hud, int width, int height, bool thirdPerson, bool spotligh
         hud.cachedCollectedSamples = collectedSamples;
         hud.cachedTotalSamples = totalSamples;
     }
+
     if (hud.vertexCount <= 0) return;
 
+    if (glBindFramebuffer_) glBindFramebuffer_(kGL_FRAMEBUFFER, 0);
+    if (glViewport_) glViewport_(0, 0, width, height);
+
     glDisable(kGL_DEPTH_TEST);
+    glDisable(kGL_CULL_FACE);
+    glDepthMask(1);
     glEnable(kGL_BLEND);
     glBlendFunc(kGL_SRC_ALPHA, kGL_ONE_MINUS_SRC_ALPHA);
     glUseProgram_(hud.program);
-    glUniform3f_(hud.uScreenSize, static_cast<float>(width), static_cast<float>(height), 0.0f);
     glBindVertexArray_(hud.vao);
     glDrawArrays(kGL_TRIANGLES, 0, hud.vertexCount);
     glBindVertexArray_(0);

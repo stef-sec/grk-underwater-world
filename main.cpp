@@ -243,7 +243,9 @@ static Mat4 submarineModelMatrix(const Vec3 &worldPos) {
 }
 
 static void setThirdPersonMode(bool enabled) {
+    if (g_thirdPerson == enabled) return;
     g_thirdPerson = enabled;
+    invalidateHudCache(g_hud);
 }
 
 static int findNearestSeaweedSample(Vec3 pos, float maxDistance) {
@@ -288,10 +290,6 @@ static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
     const Vec3 back = vec3Scale(forward, -kChaseDistance);
     outEye = vec3Add(vec3Add(subPos, back), Vec3{0.0f, kChaseHeight, 0.0f});
     outTarget = vec3Add(subPos, vec3Scale(forward, 1.2f));
-}
-
-static void updateWindowTitle() {
-    SetWindowTextW(g_hwnd, L"GRK Underwater World - Night Dive");
 }
 
 static void initPrograms() {
@@ -542,6 +540,9 @@ static void handleMaterialKey(WPARAM key) {
         break;
     case VK_F2:
         g_hudEnabled = !g_hudEnabled;
+        if (g_hudEnabled) {
+            invalidateHudCache(g_hud);
+        }
         break;
     case 'Y':
         g_volumetricStrength = clampf(g_volumetricStrength + 0.15f, 0.0f, 5.0f);
@@ -560,7 +561,6 @@ static void handleMaterialKey(WPARAM key) {
         break;
     default: return;
     }
-    updateWindowTitle();
 }
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -577,6 +577,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         resizeViewport(LOWORD(lParam), HIWORD(lParam));
         return 0;
     case WM_KEYDOWN:
+        if (lParam & 0x40000000) return 0;
         switch (wParam) {
         case VK_ESCAPE:
             g_running = false;
@@ -627,14 +628,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     RECT rect{0, 0, kWidth, kHeight};
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
-    g_hwnd = CreateWindowA(wc.lpszClassName, "GRK Underwater World - Night", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+    g_hwnd = CreateWindowA(wc.lpszClassName, "", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
         nullptr, nullptr, hInstance, nullptr);
     if (!g_hwnd) return 1;
     if (!initOpenGL(g_hwnd)) return 2;
-    updateWindowTitle();
     ShowWindow(g_hwnd, nCmdShow);
     UpdateWindow(g_hwnd);
+    SetFocus(g_hwnd);
 
     MSG msg{};
     ULONGLONG last = GetTickCount64();
