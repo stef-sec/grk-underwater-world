@@ -8,6 +8,7 @@
 #include <cstdio>
 
 #include "camera.h"
+#include "fish.h"
 #include "gl_loader.h"
 #include "lighting.h"
 #include "math.h"
@@ -44,6 +45,7 @@ static SkyboxGPU g_skybox;
 static ShadowGPU g_shadow;
 static SeaweedGPU g_seaweed;
 static SubmarineGPU g_submarine;
+static FishGPU g_fish;
 static VolumetricGPU g_volumetric;
 
 static GLuint g_terrainProgram = 0;
@@ -205,10 +207,11 @@ static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
 static void updateWindowTitle() {
     char title[512];
     snprintf(title, sizeof(title),
-        "GRK Underwater World | %s | %s | Vol=%.1f (Y/U) | L torch | T view",
+        "GRK Underwater World | %s | %s | Vol=%.1f (Y/U) | L torch | T view | P fish (%s)",
         g_thirdPerson ? "3rd person" : "1st person",
         g_spotlightEnabled ? "torch ON" : "torch OFF",
-        g_volumetricStrength);
+        g_volumetricStrength,
+        fishDisplayModeLabel(g_fish.displayMode));
     SetWindowTextA(g_hwnd, title);
 }
 
@@ -266,6 +269,7 @@ static void initScene() {
     initPrograms();
     initSeaweed(g_seaweed, g_waterLevel);
     initSubmarine(g_submarine);
+    initFish(g_fish, g_waterLevel);
     initVolumetric(g_volumetric);
     glEnable(kGL_DEPTH_TEST);
 }
@@ -369,6 +373,8 @@ static void renderFrame() {
 
     drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, scene.fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure);
 
+    drawFish(g_fish, vp, g_time, eye, g_waterLevel, scene.fogDensity, kMoonLightDir, scene.moonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure, scene.clearColor);
+
     if (g_thirdPerson && g_submarine.loaded) {
         const Mat4 subModel = submarineModelMatrix(subPos);
         drawSubmarine(g_submarine, vp, subModel, eye, g_waterLevel, scene.fogDensity, kMoonLightDir, scene.moonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure);
@@ -422,6 +428,9 @@ static void handleMaterialKey(WPARAM key) {
     case 'H': g_debugMaterials = !g_debugMaterials; break;
     case 'T':
         setThirdPersonMode(!g_thirdPerson);
+        break;
+    case 'P':
+        cycleFishDisplayMode(g_fish);
         break;
     case 'L':
     case VK_F1:
@@ -531,6 +540,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         dt = clampf(dt, 0.0f, 0.033f);
         g_time += dt;
         updateInput(dt);
+        updateFish(g_fish, dt);
         renderFrame();
         Sleep(1);
     }
@@ -541,6 +551,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     destroyShadow(g_shadow);
     destroySeaweed(g_seaweed);
     destroySubmarine(g_submarine);
+    destroyFish(g_fish);
     destroyVolumetric(g_volumetric);
     destroyWater(g_water);
     destroyTerrain(g_terrain);

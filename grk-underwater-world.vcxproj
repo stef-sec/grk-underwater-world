@@ -138,6 +138,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="camera.cpp" />
+    <ClCompile Include="fish.cpp" />
     <ClCompile Include="gl_loader.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="math.cpp" />
@@ -145,6 +146,7 @@
     <ClCompile Include="shader.cpp" />
     <ClCompile Include="shadow.cpp" />
     <ClCompile Include="skybox.cpp" />
+    <ClCompile Include="spline.cpp" />
     <ClCompile Include="submarine.cpp" />
     <ClCompile Include="terrain.cpp" />
     <ClCompile Include="volumetric.cpp" />
@@ -152,6 +154,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
+    <ClInclude Include="fish.h" />
     <ClInclude Include="gl_loader.h" />
     <ClInclude Include="lighting.h" />
     <ClInclude Include="math.h" />
@@ -159,12 +162,17 @@
     <ClInclude Include="shader.h" />
     <ClInclude Include="shadow.h" />
     <ClInclude Include="skybox.h" />
+    <ClInclude Include="spline.h" />
     <ClInclude Include="submarine.h" />
     <ClInclude Include="terrain.h" />
     <ClInclude Include="volumetric.h" />
     <ClInclude Include="water.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\fish.frag" />
+    <None Include="shaders\fish.vert" />
+    <None Include="shaders\path.frag" />
+    <None Include="shaders\path.vert" />
     <None Include="shaders\seaweed.frag" />
     <None Include="shaders\seaweed.vert" />
     <None Include="shaders\shadow.frag" />
