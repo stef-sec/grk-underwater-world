@@ -30,6 +30,7 @@ uniform float uRockMetallic;
 uniform float uRockRoughness;
 uniform float uNormalStrength;
 uniform float uDebugMaterials;
+uniform float uExposure;
 uniform sampler2D uShadowMap;
 
 out vec4 FragColor;
@@ -118,8 +119,9 @@ float spotFalloff(vec3 worldPos, vec3 lightDir) {
     vec3 lightToFrag = normalize(worldPos - uSpotPos);
     float theta = dot(lightToFrag, normalize(lightDir));
     float cone = clamp((theta - uSpotOuter) / max(uSpotInner - uSpotOuter, 0.0001), 0.0, 1.0);
+    cone *= cone;
     float dist = length(worldPos - uSpotPos);
-    float attenuation = 1.0 / (1.0 + 0.04 * dist + 0.012 * dist * dist);
+    float attenuation = 1.0 / (1.0 + 0.06 * dist + 0.018 * dist * dist);
     return cone * attenuation * uSpotIntensity;
 }
 
@@ -168,9 +170,9 @@ void main() {
     float spotReceiver = mix(max(spotNdotL, geomNdotL), max(max(spotNdotL, geomNdotL), 0.42), flatness);
 
     vec3 spotPbr = evaluatePBR(N, V, spotL, baseMix, metallicMix, roughnessMix, 1.0);
-    vec3 spotDiffuse = baseMix * spotReceiver * spotCone * 0.22;
+    vec3 spotDiffuse = baseMix * spotReceiver * spotCone * 0.10;
     vec3 spotSpecular = spotPbr * spotCone;
-    vec3 spotContribution = uSpotColor * (spotDiffuse + spotSpecular * 0.35);
+    vec3 spotContribution = uSpotColor * (spotDiffuse + spotSpecular * 0.12);
 
     lit += spotContribution;
 
@@ -184,13 +186,10 @@ void main() {
     lit = mix(lit, uDeepColor, fog * 0.9);
     lit = mix(lit, waterScatter, clamp(waterDepth * 0.55, 0.0, 1.0));
 
-    // Keep spotlight readable on the seabed through underwater fog.
-    lit += spotContribution * flatness * (1.0 - fog * 0.25);
-
     vec2 causticUV = vWorldPos.xz - L.xz * vWorldPos.y * 0.18;
     float caustic = causticLayer(causticUV, uTime, 0.55, vec2(0.08, 0.06));
     caustic = smoothstep(0.85, 1.35, caustic);
     lit += caustic * (1.0 - waterDepth) * (1.0 - fog) * shadow * 0.022;
 
-    FragColor = vec4(lit, 1.0);
+    FragColor = vec4(lit * uExposure, 1.0);
 }

@@ -118,6 +118,7 @@ void initSkybox(SkyboxGPU &skybox) {
     skybox.uView = glGetUniformLocation_(skybox.program, "uView");
     skybox.uProj = glGetUniformLocation_(skybox.program, "uProj");
     skybox.uCubemap = glGetUniformLocation_(skybox.program, "uCubemap");
+    skybox.uBrightness = glGetUniformLocation_(skybox.program, "uBrightness");
     skybox.cubemap = createNightCubemap();
 
     glGenVertexArrays_(1, &skybox.vao);
@@ -132,11 +133,12 @@ void initSkybox(SkyboxGPU &skybox) {
     skybox.vbo = vbo;
 }
 
-void drawSkybox(const SkyboxGPU &skybox, const float viewNoTranslation[16], const float proj[16]) {
+void drawSkybox(const SkyboxGPU &skybox, const float viewNoTranslation[16], const float proj[16], float brightness) {
     glDepthFunc(kGL_LEQUAL);
     glUseProgram_(skybox.program);
     glUniformMatrix4fv_(skybox.uView, 1, 0, viewNoTranslation);
     glUniformMatrix4fv_(skybox.uProj, 1, 0, proj);
+    glUniform1f_(skybox.uBrightness, brightness);
     glActiveTexture_(kGL_TEXTURE0);
     glBindTexture_(kGL_TEXTURE_CUBE_MAP, skybox.cubemap);
     glUniform1i_(skybox.uCubemap, 0);

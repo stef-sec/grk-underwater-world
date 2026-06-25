@@ -206,6 +206,7 @@ void initSeaweed(SeaweedGPU &seaweed, float waterLevel) {
     seaweed.uSpotInner = glGetUniformLocation_(seaweed.program, "uSpotInner");
     seaweed.uSpotOuter = glGetUniformLocation_(seaweed.program, "uSpotOuter");
     seaweed.uSpotIntensity = glGetUniformLocation_(seaweed.program, "uSpotIntensity");
+    seaweed.uExposure = glGetUniformLocation_(seaweed.program, "uExposure");
 
     const std::string path = resolveSeaweedModelPath();
     std::vector<PropVertex> vertices;
@@ -227,7 +228,7 @@ void initSeaweed(SeaweedGPU &seaweed, float waterLevel) {
     seaweed.loaded = true;
 }
 
-void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity) {
+void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure) {
     if (!seaweed.loaded || seaweed.instances.empty()) return;
 
     glDisable(kGL_CULL_FACE);
@@ -244,6 +245,7 @@ void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, fl
     glUniform1f_(seaweed.uSpotInner, spotInner);
     glUniform1f_(seaweed.uSpotOuter, spotOuter);
     glUniform1f_(seaweed.uSpotIntensity, spotIntensity);
+    glUniform1f_(seaweed.uExposure, exposure);
     glBindVertexArray_(seaweed.vao);
     for (const SeaweedInstance &inst : seaweed.instances) {
         const Mat4 model = mat4Model({inst.x, inst.y, inst.z}, inst.rotY, inst.scale);

@@ -185,6 +185,7 @@ void initSubmarine(SubmarineGPU &submarine) {
     submarine.uSpotIntensity = glGetUniformLocation_(submarine.program, "uSpotIntensity");
     submarine.uDeepColor = glGetUniformLocation_(submarine.program, "uDeepColor");
     submarine.uBaseColor = glGetUniformLocation_(submarine.program, "uBaseColor");
+    submarine.uExposure = glGetUniformLocation_(submarine.program, "uExposure");
 
     const std::string path = resolveSubmarineModelPath();
     constexpr uint64_t kMaxObjBytes = 64ull * 1024ull * 1024ull;
@@ -213,7 +214,7 @@ void initSubmarine(SubmarineGPU &submarine) {
     submarine.loaded = true;
 }
 
-void drawSubmarine(const SubmarineGPU &submarine, const Mat4 &viewProj, const Mat4 &model, Vec3 cameraPos, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity) {
+void drawSubmarine(const SubmarineGPU &submarine, const Mat4 &viewProj, const Mat4 &model, Vec3 cameraPos, float waterLevel, float fogDensity, Vec3 moonDir, Vec3 moonColor, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure) {
     if (!submarine.loaded || submarine.count == 0) return;
 
     glEnable(kGL_CULL_FACE);
@@ -224,8 +225,8 @@ void drawSubmarine(const SubmarineGPU &submarine, const Mat4 &viewProj, const Ma
     glUniform1f_(submarine.uWaterLevel, waterLevel);
     glUniform1f_(submarine.uFogDensity, fogDensity);
     glUniform3f_(submarine.uCameraPos, cameraPos.x, cameraPos.y, cameraPos.z);
-    glUniform3f_(submarine.uLightDir, kMoonLightDir.x, kMoonLightDir.y, kMoonLightDir.z);
-    glUniform3f_(submarine.uLightColor, kMoonLightColor.x, kMoonLightColor.y, kMoonLightColor.z);
+    glUniform3f_(submarine.uLightDir, moonDir.x, moonDir.y, moonDir.z);
+    glUniform3f_(submarine.uLightColor, moonColor.x, moonColor.y, moonColor.z);
     glUniform3f_(submarine.uSpotPos, spotPos.x, spotPos.y, spotPos.z);
     glUniform3f_(submarine.uSpotDir, spotDir.x, spotDir.y, spotDir.z);
     glUniform3f_(submarine.uSpotColor, spotColor.x, spotColor.y, spotColor.z);
@@ -234,6 +235,7 @@ void drawSubmarine(const SubmarineGPU &submarine, const Mat4 &viewProj, const Ma
     glUniform1f_(submarine.uSpotIntensity, spotIntensity);
     glUniform3f_(submarine.uDeepColor, kNightFogColor.x, kNightFogColor.y, kNightFogColor.z);
     glUniform3f_(submarine.uBaseColor, 0.46f, 0.48f, 0.54f);
+    glUniform1f_(submarine.uExposure, exposure);
     glBindVertexArray_(submarine.vao);
     glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(submarine.count));
     glBindVertexArray_(0);

@@ -12,8 +12,9 @@ struct SkyboxGPU {
     GLint uView = -1;
     GLint uProj = -1;
     GLint uCubemap = -1;
+    GLint uBrightness = -1;
 };
 
 void initSkybox(SkyboxGPU &skybox);
-void drawSkybox(const SkyboxGPU &skybox, const float viewNoTranslation[16], const float proj[16]);
+void drawSkybox(const SkyboxGPU &skybox, const float viewNoTranslation[16], const float proj[16], float brightness);
 void destroySkybox(SkyboxGPU &skybox);

@@ -35,8 +35,9 @@ struct SeaweedGPU {
     GLint uSpotInner = -1;
     GLint uSpotOuter = -1;
     GLint uSpotIntensity = -1;
+    GLint uExposure = -1;
 };
 
 void initSeaweed(SeaweedGPU &seaweed, float waterLevel);
-void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity);
+void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure);
 void destroySeaweed(SeaweedGPU &seaweed);

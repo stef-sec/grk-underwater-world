@@ -16,6 +16,7 @@ uniform float uSpotInner;
 uniform float uSpotOuter;
 uniform float uSpotIntensity;
 uniform float uTime;
+uniform float uExposure;
 
 out vec4 FragColor;
 
@@ -59,7 +60,7 @@ void main() {
     float attenuation = 1.0 / (1.0 + 0.045 * dist + 0.02 * dist * dist);
     float spot = cone * attenuation * uSpotIntensity;
     float spotSpec = pow(max(dot(reflect(-normalize(uSpotPos - vWorldPos), N), V), 0.0), 90.0);
-    color += uSpotColor * (spot * 0.18 + spotSpec * spot * 0.6);
+    color += uSpotColor * (spot * 0.06 + spotSpec * spot * 0.15);
 
     float alpha = mix(0.38, 0.55, fresnel);
     if (uWaterCameraY < uWaterSurfaceLevel) {
@@ -67,5 +68,5 @@ void main() {
         alpha = mix(0.46, 0.62, fresnel);
     }
 
-    FragColor = vec4(color, alpha);
+    FragColor = vec4(color * uExposure, alpha);
 }

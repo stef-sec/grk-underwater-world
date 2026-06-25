@@ -15,6 +15,7 @@ uniform float uSpotOuter;
 uniform float uSpotIntensity;
 uniform vec3 uDeepColor;
 uniform vec3 uBaseColor;
+uniform float uExposure;
 
 out vec4 FragColor;
 
@@ -43,9 +44,9 @@ void main() {
 
     vec3 lit = uBaseColor * (vec3(0.08) + uLightColor * moonDiffuse * 0.55);
     lit += uLightColor * moonSpec * 0.18;
-    lit += uSpotColor * (spotDiffuse * 0.9 + spotSpec * 0.7);
+    lit += uSpotColor * (spotDiffuse * 0.35 + spotSpec * 0.20);
     lit = mix(lit, vec3(0.02, 0.08, 0.14), waterDepth * 0.35);
     lit = mix(lit, uDeepColor, fog * 0.82);
 
-    FragColor = vec4(lit, 1.0);
+    FragColor = vec4(lit * uExposure, 1.0);
 }

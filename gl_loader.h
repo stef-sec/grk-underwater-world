@@ -28,6 +28,7 @@ constexpr GLenum kGL_DEPTH_TEST = 0x0B71;
 constexpr GLenum kGL_BLEND = 0x0BE2;
 constexpr GLenum kGL_SRC_ALPHA = 0x0302;
 constexpr GLenum kGL_ONE_MINUS_SRC_ALPHA = 0x0303;
+constexpr GLenum kGL_ONE = 0x0001;
 constexpr GLenum kGL_UNSIGNED_INT = 0x1405;
 constexpr GLenum kGL_FLOAT = 0x1406;
 constexpr GLenum kGL_TEXTURE_2D = 0x0DE1;

@@ -17,6 +17,7 @@
 #include "skybox.h"
 #include "submarine.h"
 #include "terrain.h"
+#include "volumetric.h"
 #include "water.h"
 
 #pragma comment(lib, "opengl32.lib")
@@ -43,6 +44,7 @@ static SkyboxGPU g_skybox;
 static ShadowGPU g_shadow;
 static SeaweedGPU g_seaweed;
 static SubmarineGPU g_submarine;
+static VolumetricGPU g_volumetric;
 
 static GLuint g_terrainProgram = 0;
 static GLuint g_waterProgram = 0;
@@ -72,6 +74,7 @@ static GLint g_uTerrainSpotColor = -1;
 static GLint g_uTerrainSpotInner = -1;
 static GLint g_uTerrainSpotOuter = -1;
 static GLint g_uTerrainSpotIntensity = -1;
+static GLint g_uTerrainExposure = -1;
 
 static GLint g_uWaterViewProj = -1;
 static GLint g_uWaterTime = -1;
@@ -86,6 +89,7 @@ static GLint g_uWaterSpotColor = -1;
 static GLint g_uWaterSpotInner = -1;
 static GLint g_uWaterSpotOuter = -1;
 static GLint g_uWaterSpotIntensity = -1;
+static GLint g_uWaterExposure = -1;
 
 static Camera g_camera;
 static CameraInput g_input;
@@ -106,8 +110,42 @@ static float g_normalStrength = 1.0f;
 static bool g_debugMaterials = false;
 static bool g_spotlightEnabled = true;
 static bool g_thirdPerson = false;
+static float g_volumetricStrength = 2.0f;
 
 static constexpr float kChaseDistance = 5.5f;
+
+struct SceneLighting {
+    Vec3 moonColor;
+    Vec3 ambient;
+    float fogDensity;
+    float exposure;
+    float skyBrightness;
+    float volStrength;
+    Vec3 clearColor;
+};
+
+static SceneLighting computeSceneLighting() {
+    SceneLighting l{};
+    if (g_spotlightEnabled) {
+        l.moonColor = vec3Scale(kMoonLightColor, 0.22f);
+        l.ambient = kNightAmbient;
+        l.fogDensity = g_fogDensity;
+        l.exposure = 1.0f;
+        l.skyBrightness = 1.0f;
+        l.volStrength = g_volumetricStrength;
+        l.clearColor = kNightFogColor;
+    } else {
+        l.moonColor = {0.006f, 0.008f, 0.012f};
+        l.ambient = {0.003f, 0.004f, 0.006f};
+        l.fogDensity = clampf(g_fogDensity * 5.0f, 0.12f, 0.38f);
+        l.exposure = 0.035f;
+        l.skyBrightness = 0.04f;
+        l.volStrength = g_volumetricStrength * 0.08f;
+        l.clearColor = {0.003f, 0.006f, 0.01f};
+    }
+    return l;
+}
+
 static constexpr float kChaseHeight = 2.4f;
 static constexpr float kSpotForward = 0.95f;
 static constexpr float kSpotUp = 0.12f;
@@ -165,13 +203,12 @@ static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
 }
 
 static void updateWindowTitle() {
-    const Material &m = g_activeMaterial == 0 ? g_sand : g_rock;
-    const char *name = g_activeMaterial == 0 ? "Piasek" : "Skala";
     char title[512];
     snprintf(title, sizeof(title),
-        "GRK Underwater World | %s | Mat: %s (1/2) | Rough=%.2f | T view | L spotlight",
+        "GRK Underwater World | %s | %s | Vol=%.1f (Y/U) | L torch | T view",
         g_thirdPerson ? "3rd person" : "1st person",
-        name, m.roughness);
+        g_spotlightEnabled ? "torch ON" : "torch OFF",
+        g_volumetricStrength);
     SetWindowTextA(g_hwnd, title);
 }
 
@@ -202,6 +239,7 @@ static void initPrograms() {
     g_uTerrainSpotInner = glGetUniformLocation_(g_terrainProgram, "uSpotInner");
     g_uTerrainSpotOuter = glGetUniformLocation_(g_terrainProgram, "uSpotOuter");
     g_uTerrainSpotIntensity = glGetUniformLocation_(g_terrainProgram, "uSpotIntensity");
+    g_uTerrainExposure = glGetUniformLocation_(g_terrainProgram, "uExposure");
 
     g_waterProgram = createProgramFromFiles("shaders/water.vert", "shaders/water.frag");
     g_uWaterViewProj = glGetUniformLocation_(g_waterProgram, "uViewProj");
@@ -217,6 +255,7 @@ static void initPrograms() {
     g_uWaterSpotInner = glGetUniformLocation_(g_waterProgram, "uSpotInner");
     g_uWaterSpotOuter = glGetUniformLocation_(g_waterProgram, "uSpotOuter");
     g_uWaterSpotIntensity = glGetUniformLocation_(g_waterProgram, "uSpotIntensity");
+    g_uWaterExposure = glGetUniformLocation_(g_waterProgram, "uExposure");
 }
 
 static void initScene() {
@@ -227,6 +266,7 @@ static void initScene() {
     initPrograms();
     initSeaweed(g_seaweed, g_waterLevel);
     initSubmarine(g_submarine);
+    initVolumetric(g_volumetric);
     glEnable(kGL_DEPTH_TEST);
 }
 
@@ -254,6 +294,8 @@ static void updateInput(float dt) {
     if (GetAsyncKeyState(VK_NEXT) & 0x8000) g_waterLevel -= 1.2f * dt;
     if (GetAsyncKeyState('Z') & 0x8000) g_fogDensity = clampf(g_fogDensity - 0.3f * dt, 0.01f, 0.4f);
     if (GetAsyncKeyState('X') & 0x8000) g_fogDensity = clampf(g_fogDensity + 0.3f * dt, 0.01f, 0.4f);
+    if (GetAsyncKeyState('Y') & 0x8000) g_volumetricStrength = clampf(g_volumetricStrength + 0.5f * dt, 0.0f, 5.0f);
+    if (GetAsyncKeyState('U') & 0x8000) g_volumetricStrength = clampf(g_volumetricStrength - 0.5f * dt, 0.0f, 5.0f);
 }
 
 static void renderFrame() {
@@ -274,30 +316,32 @@ static void renderFrame() {
     const Vec3 spotColor = g_spotlightEnabled ? Vec3{0.82f, 0.90f, 1.0f} : Vec3{0.0f, 0.0f, 0.0f};
     const float spotInner = std::cos(16.0f * 3.14159265f / 180.0f);
     const float spotOuter = std::cos(28.0f * 3.14159265f / 180.0f);
-    const float spotIntensity = g_spotlightEnabled ? 220.0f : 0.0f;
+    const float spotIntensity = g_spotlightEnabled ? 14.0f : 0.0f;
+    const SceneLighting scene = computeSceneLighting();
     const Mat4 proj = mat4Perspective(60.0f * 3.14159265f / 180.0f, static_cast<float>(width) / static_cast<float>(height), 0.1f, 200.0f);
     const Mat4 view = mat4LookAt(eye, target, {0.0f, 1.0f, 0.0f});
     const Mat4 viewSky = mat4WithoutTranslation(view);
     const Mat4 vp = mat4Multiply(proj, view);
+    const Mat4 invViewProj = mat4Inverse(vp);
     const Mat4 lightVP = computeMoonLightMatrix({0.0f, -5.0f, 0.0f}, 34.0f);
 
     beginShadowPass(g_shadow, lightVP, g_time);
     drawShadowTerrain(g_shadow, g_terrain.vao, g_terrain.indexCount);
     endShadowPass(width, height);
 
-    glClearColor(kNightFogColor.x, kNightFogColor.y, kNightFogColor.z, 1.0f);
+    glClearColor(scene.clearColor.x, scene.clearColor.y, scene.clearColor.z, 1.0f);
     glClear(kGL_COLOR_BUFFER_BIT | kGL_DEPTH_BUFFER_BIT);
 
-    drawSkybox(g_skybox, viewSky.m, proj.m);
+    drawSkybox(g_skybox, viewSky.m, proj.m, scene.skyBrightness);
 
     glUseProgram_(g_terrainProgram);
     glUniformMatrix4fv_(g_uTerrainViewProj, 1, 0, vp.m);
     glUniformMatrix4fv_(g_uTerrainLightVP, 1, 0, lightVP.m);
     glUniform1f_(g_uTerrainTime, g_time);
     glUniform1f_(g_uTerrainWaterLevel, g_waterLevel);
-    glUniform1f_(g_uTerrainFogDensity, g_fogDensity);
+    glUniform1f_(g_uTerrainFogDensity, scene.fogDensity);
     glUniform3f_(g_uTerrainCameraPos, eye.x, eye.y, eye.z);
-    glUniform3f_(g_uTerrainDeepColor, kNightFogColor.x, kNightFogColor.y, kNightFogColor.z);
+    glUniform3f_(g_uTerrainDeepColor, scene.clearColor.x, scene.clearColor.y, scene.clearColor.z);
     glUniform3f_(g_uTerrainSandBaseColor, g_sand.baseColor[0], g_sand.baseColor[1], g_sand.baseColor[2]);
     glUniform1f_(g_uTerrainSandMetallic, g_sand.metallic);
     glUniform1f_(g_uTerrainSandRoughness, g_sand.roughness);
@@ -307,14 +351,15 @@ static void renderFrame() {
     glUniform1f_(g_uTerrainNormalStrength, g_normalStrength);
     glUniform1f_(g_uTerrainDebugMaterials, g_debugMaterials ? 1.0f : 0.0f);
     glUniform3f_(g_uTerrainLightDir, kMoonLightDir.x, kMoonLightDir.y, kMoonLightDir.z);
-    glUniform3f_(g_uTerrainLightColor, kMoonLightColor.x, kMoonLightColor.y, kMoonLightColor.z);
-    glUniform3f_(g_uTerrainAmbient, kNightAmbient.x, kNightAmbient.y, kNightAmbient.z);
+    glUniform3f_(g_uTerrainLightColor, scene.moonColor.x, scene.moonColor.y, scene.moonColor.z);
+    glUniform3f_(g_uTerrainAmbient, scene.ambient.x, scene.ambient.y, scene.ambient.z);
     glUniform3f_(g_uTerrainSpotPos, spotPos.x, spotPos.y, spotPos.z);
     glUniform3f_(g_uTerrainSpotDir, spotDir.x, spotDir.y, spotDir.z);
     glUniform3f_(g_uTerrainSpotColor, spotColor.x, spotColor.y, spotColor.z);
     glUniform1f_(g_uTerrainSpotInner, spotInner);
     glUniform1f_(g_uTerrainSpotOuter, spotOuter);
     glUniform1f_(g_uTerrainSpotIntensity, spotIntensity);
+    glUniform1f_(g_uTerrainExposure, scene.exposure);
     glActiveTexture_(kGL_TEXTURE0);
     glBindTexture_(kGL_TEXTURE_2D, g_shadow.depthMap);
     glUniform1i_(g_uTerrainShadowMap, 0);
@@ -322,12 +367,14 @@ static void renderFrame() {
     glDrawElements_(kGL_TRIANGLES, static_cast<GLsizei>(g_terrain.indexCount), kGL_UNSIGNED_INT, nullptr);
     glBindVertexArray_(0);
 
-    drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, g_fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
+    drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, scene.fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure);
 
     if (g_thirdPerson && g_submarine.loaded) {
         const Mat4 subModel = submarineModelMatrix(subPos);
-        drawSubmarine(g_submarine, vp, subModel, eye, g_waterLevel, g_fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
+        drawSubmarine(g_submarine, vp, subModel, eye, g_waterLevel, scene.fogDensity, kMoonLightDir, scene.moonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure);
     }
+
+    const Vec3 volMoonColor = g_spotlightEnabled ? vec3Scale(kMoonLightColor, 0.7f) : scene.moonColor;
 
     glEnable(kGL_BLEND);
     glBlendFunc(kGL_SRC_ALPHA, kGL_ONE_MINUS_SRC_ALPHA);
@@ -339,19 +386,22 @@ static void renderFrame() {
     glUniform1f_(g_uWaterCameraY, eye.y);
     glUniform3f_(g_uWaterCameraPos, eye.x, eye.y, eye.z);
     glUniform3f_(g_uWaterLightDir, kMoonLightDir.x, kMoonLightDir.y, kMoonLightDir.z);
-    glUniform3f_(g_uWaterLightColor, kMoonLightColor.x, kMoonLightColor.y, kMoonLightColor.z);
+    glUniform3f_(g_uWaterLightColor, scene.moonColor.x, scene.moonColor.y, scene.moonColor.z);
     glUniform3f_(g_uWaterSpotPos, spotPos.x, spotPos.y, spotPos.z);
     glUniform3f_(g_uWaterSpotDir, spotDir.x, spotDir.y, spotDir.z);
     glUniform3f_(g_uWaterSpotColor, spotColor.x, spotColor.y, spotColor.z);
     glUniform1f_(g_uWaterSpotInner, spotInner);
     glUniform1f_(g_uWaterSpotOuter, spotOuter);
     glUniform1f_(g_uWaterSpotIntensity, spotIntensity);
+    glUniform1f_(g_uWaterExposure, scene.exposure);
     glBindVertexArray_(g_water.vao);
     glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(g_water.count));
     glBindVertexArray_(0);
     glUseProgram_(0);
     glDepthMask(1);
     glDisable(kGL_BLEND);
+
+    drawVolumetric(g_volumetric, invViewProj, eye, g_waterLevel, scene.fogDensity, scene.volStrength, g_time, kMoonLightDir, volMoonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
 
     SwapBuffers(g_hdc);
 }
@@ -376,6 +426,12 @@ static void handleMaterialKey(WPARAM key) {
     case 'L':
     case VK_F1:
         g_spotlightEnabled = !g_spotlightEnabled;
+        break;
+    case 'Y':
+        g_volumetricStrength = clampf(g_volumetricStrength + 0.15f, 0.0f, 5.0f);
+        break;
+    case 'U':
+        g_volumetricStrength = clampf(g_volumetricStrength - 0.15f, 0.0f, 5.0f);
         break;
     case 'C':
         g_camera.x = 0.0f;
@@ -485,6 +541,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     destroyShadow(g_shadow);
     destroySeaweed(g_seaweed);
     destroySubmarine(g_submarine);
+    destroyVolumetric(g_volumetric);
     destroyWater(g_water);
     destroyTerrain(g_terrain);
     if (g_hrc) {

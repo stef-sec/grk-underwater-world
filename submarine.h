@@ -26,8 +26,9 @@ struct SubmarineGPU {
     GLint uSpotIntensity = -1;
     GLint uDeepColor = -1;
     GLint uBaseColor = -1;
+    GLint uExposure = -1;
 };
 
 void initSubmarine(SubmarineGPU &submarine);
-void drawSubmarine(const SubmarineGPU &submarine, const Mat4 &viewProj, const Mat4 &model, Vec3 cameraPos, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity);
+void drawSubmarine(const SubmarineGPU &submarine, const Mat4 &viewProj, const Mat4 &model, Vec3 cameraPos, float waterLevel, float fogDensity, Vec3 moonDir, Vec3 moonColor, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure);
 void destroySubmarine(SubmarineGPU &submarine);

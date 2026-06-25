@@ -28,6 +28,7 @@ Vec3 vec3Normalize(Vec3 v);
 
 Mat4 mat4Identity();
 Mat4 mat4Multiply(const Mat4 &a, const Mat4 &b);
+Mat4 mat4Inverse(const Mat4 &m);
 Mat4 mat4Perspective(float fovY, float aspect, float zNear, float zFar);
 Mat4 mat4Ortho(float left, float right, float bottom, float top, float zNear, float zFar);
 Mat4 mat4LookAt(Vec3 eye, Vec3 center, Vec3 up);
