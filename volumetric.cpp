@@ -1,5 +1,6 @@
 #include "volumetric.h"
 
+#include "gl_loader.h"
 #include "shader.h"
 
 #include <GL/gl.h>
@@ -26,6 +27,7 @@ void initVolumetric(VolumetricGPU &vol) {
     vol.uSpotInner = glGetUniformLocation_(vol.program, "uSpotInner");
     vol.uSpotOuter = glGetUniformLocation_(vol.program, "uSpotOuter");
     vol.uSpotIntensity = glGetUniformLocation_(vol.program, "uSpotIntensity");
+    vol.uSceneDepth = glGetUniformLocation_(vol.program, "uSceneDepth");
 
     glGenVertexArrays_(1, &vol.vao);
     glBindVertexArray_(vol.vao);
@@ -35,6 +37,25 @@ void initVolumetric(VolumetricGPU &vol) {
     glEnableVertexAttribArray_(0);
     glVertexAttribPointer_(0, 2, kGL_FLOAT, 0, 2 * sizeof(float), reinterpret_cast<void *>(0));
     glBindVertexArray_(0);
+}
+
+void captureVolumetricDepth(VolumetricGPU &vol, int width, int height) {
+    if (width <= 0 || height <= 0) return;
+
+    if (!vol.depthTexture) {
+        glGenTextures_(1, &vol.depthTexture);
+        glBindTexture_(kGL_TEXTURE_2D, vol.depthTexture);
+        glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_MIN_FILTER, kGL_LINEAR);
+        glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_MAG_FILTER, kGL_LINEAR);
+        glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_WRAP_S, kGL_CLAMP_TO_EDGE);
+        glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_WRAP_T, kGL_CLAMP_TO_EDGE);
+    } else {
+        glBindTexture_(kGL_TEXTURE_2D, vol.depthTexture);
+    }
+
+    glCopyTexImage2D(kGL_TEXTURE_2D, 0, kGL_DEPTH_COMPONENT, 0, 0, width, height, 0);
+    vol.depthWidth = width;
+    vol.depthHeight = height;
 }
 
 void drawVolumetric(const VolumetricGPU &vol, const Mat4 &invViewProj, Vec3 cameraPos, float waterLevel, float fogDensity, float strength, float time, Vec3 moonDir, Vec3 moonColor, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity) {
@@ -60,10 +81,14 @@ void drawVolumetric(const VolumetricGPU &vol, const Mat4 &invViewProj, Vec3 came
     glUniform1f_(vol.uSpotInner, spotInner);
     glUniform1f_(vol.uSpotOuter, spotOuter);
     glUniform1f_(vol.uSpotIntensity, spotIntensity);
+    glActiveTexture_(kGL_TEXTURE0 + 1);
+    glBindTexture_(kGL_TEXTURE_2D, vol.depthTexture);
+    glUniform1i_(vol.uSceneDepth, 1);
     glBindVertexArray_(vol.vao);
     glDrawArrays(kGL_TRIANGLES, 0, 3);
     glBindVertexArray_(0);
     glUseProgram_(0);
+    glActiveTexture_(kGL_TEXTURE0);
 
     glBlendFunc(kGL_SRC_ALPHA, kGL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(1);
@@ -74,5 +99,6 @@ void destroyVolumetric(VolumetricGPU &vol) {
     if (vol.program) glDeleteProgram_(vol.program);
     if (vol.vbo) glDeleteBuffers_(1, &vol.vbo);
     if (vol.vao) glDeleteVertexArrays_(1, &vol.vao);
+    if (vol.depthTexture) glDeleteTextures_(1, &vol.depthTexture);
     vol = {};
 }

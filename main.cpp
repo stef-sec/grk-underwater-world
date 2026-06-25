@@ -30,7 +30,7 @@ static constexpr float kCameraClearance = 0.6f;
 static constexpr float kMoveSpeed = 9.0f;
 static constexpr float kVerticalSpeed = 6.0f;
 static constexpr float kTurnSpeed = 1.6f;
-static constexpr float kSurfaceClearance = 0.45f;
+static constexpr float kSurfaceClearance = -1.1f;
 static constexpr float kSubmarineScale = 0.018f;
 
 static HDC g_hdc = nullptr;
@@ -205,7 +205,7 @@ static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
 static void updateWindowTitle() {
     char title[512];
     snprintf(title, sizeof(title),
-        "GRK Underwater World | %s | %s | Vol=%.1f (Y/U) | L torch | T view",
+        "GRK Underwater World | %s | %s | WASD move | Q/E depth | Vol=%.1f (Y/U) | L torch | T view",
         g_thirdPerson ? "3rd person" : "1st person",
         g_spotlightEnabled ? "torch ON" : "torch OFF",
         g_volumetricStrength);
@@ -401,6 +401,7 @@ static void renderFrame() {
     glDepthMask(1);
     glDisable(kGL_BLEND);
 
+    captureVolumetricDepth(g_volumetric, width, height);
     drawVolumetric(g_volumetric, invViewProj, eye, g_waterLevel, scene.fogDensity, scene.volStrength, g_time, kMoonLightDir, volMoonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
 
     SwapBuffers(g_hdc);
