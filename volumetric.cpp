@@ -42,6 +42,7 @@ void initVolumetric(VolumetricGPU &vol) {
 void captureVolumetricDepth(VolumetricGPU &vol, int width, int height) {
     if (width <= 0 || height <= 0) return;
 
+    const bool needAllocate = !vol.depthTexture || vol.depthWidth != width || vol.depthHeight != height;
     if (!vol.depthTexture) {
         glGenTextures_(1, &vol.depthTexture);
         glBindTexture_(kGL_TEXTURE_2D, vol.depthTexture);
@@ -53,7 +54,10 @@ void captureVolumetricDepth(VolumetricGPU &vol, int width, int height) {
         glBindTexture_(kGL_TEXTURE_2D, vol.depthTexture);
     }
 
-    glCopyTexImage2D(kGL_TEXTURE_2D, 0, kGL_DEPTH_COMPONENT, 0, 0, width, height, 0);
+    if (needAllocate) {
+        glTexImage2D_(kGL_TEXTURE_2D, 0, kGL_DEPTH_COMPONENT, width, height, 0, kGL_DEPTH_COMPONENT, kGL_FLOAT, nullptr);
+    }
+    glCopyTexSubImage2D(kGL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
     vol.depthWidth = width;
     vol.depthHeight = height;
 }

@@ -140,8 +140,10 @@
     <ClCompile Include="camera.cpp" />
     <ClCompile Include="fish.cpp" />
     <ClCompile Include="gl_loader.cpp" />
+    <ClCompile Include="hud.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="math.cpp" />
+    <ClCompile Include="particles.cpp" />
     <ClCompile Include="props.cpp" />
     <ClCompile Include="shader.cpp" />
     <ClCompile Include="shadow.cpp" />
@@ -156,8 +158,10 @@
     <ClInclude Include="camera.h" />
     <ClInclude Include="fish.h" />
     <ClInclude Include="gl_loader.h" />
+    <ClInclude Include="hud.h" />
     <ClInclude Include="lighting.h" />
     <ClInclude Include="math.h" />
+    <ClInclude Include="particles.h" />
     <ClInclude Include="props.h" />
     <ClInclude Include="shader.h" />
     <ClInclude Include="shadow.h" />
@@ -175,6 +179,10 @@
     <None Include="shaders\path.vert" />
     <None Include="shaders\seaweed.frag" />
     <None Include="shaders\seaweed.vert" />
+    <None Include="shaders\hud.frag" />
+    <None Include="shaders\hud.vert" />
+    <None Include="shaders\particles.frag" />
+    <None Include="shaders\particles.vert" />
     <None Include="shaders\shadow.frag" />
     <None Include="shaders\shadow.vert" />
     <None Include="shaders\skybox.frag" />

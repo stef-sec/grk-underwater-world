@@ -24,6 +24,7 @@ constexpr GLenum kGL_STATIC_DRAW = 0x88E4;
 constexpr GLenum kGL_DYNAMIC_DRAW = 0x88E8;
 constexpr GLenum kGL_LINES = 0x0001;
 constexpr GLenum kGL_TRIANGLES = 0x0004;
+constexpr GLenum kGL_PROGRAM_POINT_SIZE = 0x8642;
 constexpr GLenum kGL_COLOR_BUFFER_BIT = 0x00004000;
 constexpr GLenum kGL_DEPTH_BUFFER_BIT = 0x00000100;
 constexpr GLenum kGL_DEPTH_TEST = 0x0B71;

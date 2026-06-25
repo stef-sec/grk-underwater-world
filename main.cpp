@@ -12,8 +12,10 @@
 #include "camera.h"
 #include "fish.h"
 #include "gl_loader.h"
+#include "hud.h"
 #include "lighting.h"
 #include "math.h"
+#include "particles.h"
 #include "props.h"
 #include "shader.h"
 #include "shadow.h"
@@ -46,9 +48,12 @@ static WaterGPU g_water;
 static SkyboxGPU g_skybox;
 static ShadowGPU g_shadow;
 static SeaweedGPU g_seaweed;
+static RockGPU g_rocks;
 static SubmarineGPU g_submarine;
 static FishGPU g_fish;
 static VolumetricGPU g_volumetric;
+static ParticlesGPU g_particles;
+static HudGPU g_hud;
 
 static GLuint g_terrainProgram = 0;
 static GLuint g_waterProgram = 0;
@@ -118,6 +123,8 @@ static float g_normalStrength = 1.0f;
 static bool g_debugMaterials = false;
 static bool g_spotlightEnabled = true;
 static bool g_thirdPerson = false;
+static bool g_volumetricEnabled = true;
+static bool g_hudEnabled = true;
 static float g_volumetricStrength = 2.0f;
 static int g_highlightedSeaweed = -1;
 static int g_collectedSeaweedSamples = 0;
@@ -136,22 +143,15 @@ struct SceneLighting {
 
 static SceneLighting computeSceneLighting() {
     SceneLighting l{};
-    if (g_spotlightEnabled) {
-        l.moonColor = vec3Scale(kMoonLightColor, 0.22f);
-        l.ambient = kNightAmbient;
-        l.fogDensity = g_fogDensity;
-        l.exposure = 1.0f;
-        l.skyBrightness = 1.0f;
-        l.volStrength = g_volumetricStrength;
-        l.clearColor = kNightFogColor;
-    } else {
-        l.moonColor = {0.006f, 0.008f, 0.012f};
-        l.ambient = {0.003f, 0.004f, 0.006f};
-        l.fogDensity = clampf(g_fogDensity * 5.0f, 0.12f, 0.38f);
-        l.exposure = 0.035f;
-        l.skyBrightness = 0.04f;
-        l.volStrength = g_volumetricStrength * 0.08f;
-        l.clearColor = {0.003f, 0.006f, 0.01f};
+    l.moonColor = vec3Scale(kMoonLightColor, 0.30f);
+    l.ambient = vec3Scale(kNightAmbient, 0.75f);
+    l.fogDensity = g_fogDensity;
+    l.exposure = 0.62f;
+    l.skyBrightness = 0.45f;
+    l.volStrength = g_volumetricStrength;
+    l.clearColor = kNightFogColor;
+    if (!g_volumetricEnabled) {
+        l.volStrength = 0.0f;
     }
     return l;
 }
@@ -291,15 +291,7 @@ static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
 }
 
 static void updateWindowTitle() {
-    char title[512];
-    snprintf(title, sizeof(title),
-        "GRK Underwater World | %s | %s | Samples=%d (G) | Vol=%.1f (Y/U) | L torch | T view | P fish (%s)",
-        g_thirdPerson ? "3rd person" : "1st person",
-        g_spotlightEnabled ? "torch ON" : "torch OFF",
-        g_collectedSeaweedSamples,
-        g_volumetricStrength,
-        fishDisplayModeLabel(g_fish.displayMode));
-    SetWindowTextA(g_hwnd, title);
+    SetWindowTextW(g_hwnd, L"GRK Underwater World - Night Dive");
 }
 
 static void initPrograms() {
@@ -359,9 +351,12 @@ static void initScene() {
     g_sandNormalMap = createTerrainNormalMap(false);
     g_rockNormalMap = createTerrainNormalMap(true);
     initSeaweed(g_seaweed, g_waterLevel);
+    initRocks(g_rocks, g_waterLevel);
     initSubmarine(g_submarine);
     initFish(g_fish, g_waterLevel);
     initVolumetric(g_volumetric);
+    initParticles(g_particles);
+    initHud(g_hud);
     glEnable(kGL_DEPTH_TEST);
 }
 
@@ -469,6 +464,7 @@ static void renderFrame() {
     glBindVertexArray_(0);
 
     drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, scene.fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure, g_highlightedSeaweed);
+    drawRocks(g_rocks, vp, eye, g_waterLevel, scene.fogDensity, kMoonLightDir, scene.moonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure);
 
     drawFish(g_fish, vp, g_time, eye, g_waterLevel, scene.fogDensity, kMoonLightDir, scene.moonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure, scene.clearColor);
 
@@ -477,7 +473,7 @@ static void renderFrame() {
         drawSubmarine(g_submarine, vp, subModel, eye, g_waterLevel, scene.fogDensity, kMoonLightDir, scene.moonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure);
     }
 
-    const Vec3 volMoonColor = g_spotlightEnabled ? vec3Scale(kMoonLightColor, 0.7f) : scene.moonColor;
+    const Vec3 volMoonColor = scene.moonColor;
 
     glEnable(kGL_BLEND);
     glBlendFunc(kGL_SRC_ALPHA, kGL_ONE_MINUS_SRC_ALPHA);
@@ -504,8 +500,15 @@ static void renderFrame() {
     glDepthMask(1);
     glDisable(kGL_BLEND);
 
-    captureVolumetricDepth(g_volumetric, width, height);
-    drawVolumetric(g_volumetric, invViewProj, eye, g_waterLevel, scene.fogDensity, scene.volStrength, g_time, kMoonLightDir, volMoonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
+    if (scene.volStrength > 0.0001f) {
+        captureVolumetricDepth(g_volumetric, width, height);
+        drawVolumetric(g_volumetric, invViewProj, eye, g_waterLevel, scene.fogDensity, scene.volStrength, g_time, kMoonLightDir, volMoonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
+    }
+    drawParticles(g_particles, vp, eye, g_waterLevel, g_time);
+    if (g_hudEnabled) {
+        drawHud(g_hud, width, height, g_thirdPerson, g_spotlightEnabled, g_volumetricEnabled,
+            g_volumetricStrength, g_collectedSeaweedSamples, static_cast<int>(g_seaweed.instances.size()));
+    }
 
     SwapBuffers(g_hdc);
 }
@@ -537,11 +540,17 @@ static void handleMaterialKey(WPARAM key) {
     case VK_F1:
         g_spotlightEnabled = !g_spotlightEnabled;
         break;
+    case VK_F2:
+        g_hudEnabled = !g_hudEnabled;
+        break;
     case 'Y':
         g_volumetricStrength = clampf(g_volumetricStrength + 0.15f, 0.0f, 5.0f);
         break;
     case 'U':
         g_volumetricStrength = clampf(g_volumetricStrength - 0.15f, 0.0f, 5.0f);
+        break;
+    case 'O':
+        g_volumetricEnabled = !g_volumetricEnabled;
         break;
     case 'C':
         g_camera.x = 0.0f;
@@ -653,9 +662,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     destroySkybox(g_skybox);
     destroyShadow(g_shadow);
     destroySeaweed(g_seaweed);
+    destroyRocks(g_rocks);
     destroySubmarine(g_submarine);
     destroyFish(g_fish);
     destroyVolumetric(g_volumetric);
+    destroyParticles(g_particles);
+    destroyHud(g_hud);
     destroyWater(g_water);
     destroyTerrain(g_terrain);
     if (g_hrc) {

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -170,11 +171,25 @@ static void uploadMesh(SeaweedGPU &seaweed, const std::vector<PropVertex> &verti
     glBindVertexArray_(0);
 }
 
+static void uploadRockMesh(RockGPU &rocks, const std::vector<PropVertex> &vertices) {
+    rocks.count = static_cast<GLuint>(vertices.size());
+    glGenVertexArrays_(1, &rocks.vao);
+    glBindVertexArray_(rocks.vao);
+    glGenBuffers_(1, &rocks.vbo);
+    glBindBuffer_(kGL_ARRAY_BUFFER, rocks.vbo);
+    glBufferData_(kGL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(PropVertex)), vertices.data(), kGL_STATIC_DRAW);
+    glEnableVertexAttribArray_(0);
+    glVertexAttribPointer_(0, 3, kGL_FLOAT, 0, sizeof(PropVertex), reinterpret_cast<void *>(0));
+    glEnableVertexAttribArray_(1);
+    glVertexAttribPointer_(1, 3, kGL_FLOAT, 0, sizeof(PropVertex), reinterpret_cast<void *>(offsetof(PropVertex, nx)));
+    glBindVertexArray_(0);
+}
+
 static void scatterInstances(SeaweedGPU &seaweed, float waterLevel) {
     seaweed.instances.clear();
-    constexpr int kTargetCount = 60;
+    constexpr int kTargetCount = 105;
     int placed = 0;
-    for (int i = 0; placed < kTargetCount && i < 400; ++i) {
+    for (int i = 0; placed < kTargetCount && i < 800; ++i) {
         const float hx = hash2i(i, i * 3 + 1);
         const float hz = hash2i(i * 5 + 2, i + 7);
         const float x = (hx - 0.5f) * kTerrainWidth * 0.88f;
@@ -265,10 +280,147 @@ void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, fl
     glUseProgram_(0);
 }
 
+static std::vector<PropVertex> buildRockMesh() {
+    constexpr int rings = 6;
+    constexpr int segments = 14;
+    constexpr float pi = 3.14159265f;
+
+    auto rockPoint = [](int r, int s) -> Vec3 {
+        const float t = static_cast<float>(r) / static_cast<float>(rings - 1);
+        const float a = static_cast<float>(s) / static_cast<float>(segments) * 2.0f * pi;
+        const float radius = std::sqrt(std::max(0.02f, 1.0f - t * t));
+        const float lump = 0.88f + 0.12f * std::sin(a * 3.0f + t * 5.7f) + 0.06f * std::cos(a * 5.0f - t * 3.1f);
+        return {std::cos(a) * radius * lump, t * 0.82f, std::sin(a) * radius * lump * 0.72f};
+    };
+
+    std::vector<PropVertex> vertices;
+    vertices.reserve(static_cast<size_t>((rings - 1) * segments * 6 + segments * 3));
+
+    auto pushVertex = [&](Vec3 p) {
+        Vec3 n = vec3Normalize({p.x, p.y * 0.75f + 0.22f, p.z});
+        vertices.push_back(PropVertex{p.x, p.y, p.z, n.x, n.y, n.z});
+    };
+
+    for (int r = 0; r < rings - 1; ++r) {
+        for (int s = 0; s < segments; ++s) {
+            const int sn = (s + 1) % segments;
+            Vec3 p00 = rockPoint(r, s);
+            Vec3 p10 = rockPoint(r + 1, s);
+            Vec3 p01 = rockPoint(r, sn);
+            Vec3 p11 = rockPoint(r + 1, sn);
+            pushVertex(p00);
+            pushVertex(p10);
+            pushVertex(p01);
+            pushVertex(p01);
+            pushVertex(p10);
+            pushVertex(p11);
+        }
+    }
+
+    for (int s = 0; s < segments; ++s) {
+        const int sn = (s + 1) % segments;
+        Vec3 p0 = rockPoint(0, s);
+        Vec3 p1 = rockPoint(0, sn);
+        vertices.push_back(PropVertex{0.0f, -0.03f, 0.0f, 0.0f, -1.0f, 0.0f});
+        vertices.push_back(PropVertex{p1.x, p1.y, p1.z, 0.0f, -1.0f, 0.0f});
+        vertices.push_back(PropVertex{p0.x, p0.y, p0.z, 0.0f, -1.0f, 0.0f});
+    }
+
+    return vertices;
+}
+
+static void scatterRocks(RockGPU &rocks, float waterLevel) {
+    rocks.instances.clear();
+    constexpr int kTargetCount = 34;
+    int placed = 0;
+    for (int i = 0; placed < kTargetCount && i < 300; ++i) {
+        const float hx = hash2i(i + 101, i * 7 + 3);
+        const float hz = hash2i(i * 11 + 5, i + 151);
+        const float x = (hx - 0.5f) * kTerrainWidth * 0.82f;
+        const float z = (hz - 0.5f) * kTerrainDepth * 0.82f;
+        if (x * x + z * z < 18.0f) continue;
+
+        const float ground = terrainHeight(x, z, 0.0f);
+        if (ground > waterLevel - 2.0f) continue;
+
+        const float scale = 0.55f + hash2i(i + 211, i * 13 + 17) * 1.45f;
+        const float rot = hash2i(i + 307, i + 401) * 6.2831853f;
+        const float colorBias = hash2i(i + 503, i * 19 + 601);
+        rocks.instances.push_back(RockInstance{x, ground - 0.02f, z, scale, rot, colorBias});
+        ++placed;
+    }
+}
+
+void initRocks(RockGPU &rocks, float waterLevel) {
+    rocks.program = createProgramFromFiles("shaders/submarine.vert", "shaders/submarine.frag");
+    rocks.uViewProj = glGetUniformLocation_(rocks.program, "uViewProj");
+    rocks.uModel = glGetUniformLocation_(rocks.program, "uModel");
+    rocks.uWaterLevel = glGetUniformLocation_(rocks.program, "uWaterLevel");
+    rocks.uFogDensity = glGetUniformLocation_(rocks.program, "uFogDensity");
+    rocks.uCameraPos = glGetUniformLocation_(rocks.program, "uCameraPos");
+    rocks.uLightDir = glGetUniformLocation_(rocks.program, "uLightDir");
+    rocks.uLightColor = glGetUniformLocation_(rocks.program, "uLightColor");
+    rocks.uSpotPos = glGetUniformLocation_(rocks.program, "uSpotPos");
+    rocks.uSpotDir = glGetUniformLocation_(rocks.program, "uSpotDir");
+    rocks.uSpotColor = glGetUniformLocation_(rocks.program, "uSpotColor");
+    rocks.uSpotInner = glGetUniformLocation_(rocks.program, "uSpotInner");
+    rocks.uSpotOuter = glGetUniformLocation_(rocks.program, "uSpotOuter");
+    rocks.uSpotIntensity = glGetUniformLocation_(rocks.program, "uSpotIntensity");
+    rocks.uDeepColor = glGetUniformLocation_(rocks.program, "uDeepColor");
+    rocks.uBaseColor = glGetUniformLocation_(rocks.program, "uBaseColor");
+    rocks.uExposure = glGetUniformLocation_(rocks.program, "uExposure");
+
+    const std::vector<PropVertex> vertices = buildRockMesh();
+    uploadRockMesh(rocks, vertices);
+    scatterRocks(rocks, waterLevel);
+    rocks.loaded = true;
+}
+
+void drawRocks(const RockGPU &rocks, const Mat4 &viewProj, Vec3 cameraPos, float waterLevel, float fogDensity, Vec3 moonDir, Vec3 moonColor, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure) {
+    if (!rocks.loaded || rocks.instances.empty()) return;
+
+    glEnable(kGL_CULL_FACE);
+    glCullFace(kGL_BACK);
+    glUseProgram_(rocks.program);
+    glUniformMatrix4fv_(rocks.uViewProj, 1, 0, viewProj.m);
+    glUniform1f_(rocks.uWaterLevel, waterLevel);
+    glUniform1f_(rocks.uFogDensity, fogDensity);
+    glUniform3f_(rocks.uCameraPos, cameraPos.x, cameraPos.y, cameraPos.z);
+    glUniform3f_(rocks.uLightDir, moonDir.x, moonDir.y, moonDir.z);
+    glUniform3f_(rocks.uLightColor, moonColor.x, moonColor.y, moonColor.z);
+    glUniform3f_(rocks.uSpotPos, spotPos.x, spotPos.y, spotPos.z);
+    glUniform3f_(rocks.uSpotDir, spotDir.x, spotDir.y, spotDir.z);
+    glUniform3f_(rocks.uSpotColor, spotColor.x, spotColor.y, spotColor.z);
+    glUniform1f_(rocks.uSpotInner, spotInner);
+    glUniform1f_(rocks.uSpotOuter, spotOuter);
+    glUniform1f_(rocks.uSpotIntensity, spotIntensity);
+    glUniform3f_(rocks.uDeepColor, kNightFogColor.x, kNightFogColor.y, kNightFogColor.z);
+    glUniform1f_(rocks.uExposure, exposure);
+
+    glBindVertexArray_(rocks.vao);
+    for (const RockInstance &rock : rocks.instances) {
+        const Mat4 model = mat4Model({rock.x, rock.y, rock.z}, rock.rotY, rock.scale);
+        const float c = 0.75f + rock.colorBias * 0.25f;
+        glUniformMatrix4fv_(rocks.uModel, 1, 0, model.m);
+        glUniform3f_(rocks.uBaseColor, 0.25f * c, 0.24f * c, 0.22f * c);
+        glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(rocks.count));
+    }
+    glBindVertexArray_(0);
+    glUseProgram_(0);
+    glDisable(kGL_CULL_FACE);
+}
+
 void destroySeaweed(SeaweedGPU &seaweed) {
     if (seaweed.program) glDeleteProgram_(seaweed.program);
     if (seaweed.vbo) glDeleteBuffers_(1, &seaweed.vbo);
     if (seaweed.vao) glDeleteVertexArrays_(1, &seaweed.vao);
     seaweed = {};
+}
+
+void destroyRocks(RockGPU &rocks) {
+    if (rocks.program) glDeleteProgram_(rocks.program);
+    if (rocks.vbo) glDeleteBuffers_(1, &rocks.vbo);
+    if (rocks.vao) glDeleteVertexArrays_(1, &rocks.vao);
+    rocks = {};
 }
 
