@@ -15,6 +15,7 @@ uniform vec3 uSpotColor;
 uniform float uSpotInner;
 uniform float uSpotOuter;
 uniform float uSpotIntensity;
+uniform sampler2D uSceneDepth;
 
 out vec4 FragColor;
 
@@ -89,14 +90,25 @@ void main() {
     vec3 rayFar = worldPosOnRay(ndc, 1.0);
     vec3 rayDir = normalize(rayFar - rayNear);
 
+    float sceneDepth = texture(uSceneDepth, vUV).r;
+    float maxDist = 60.0;
+    if (sceneDepth < 0.9999) {
+        vec3 sceneHit = worldPosOnRay(ndc, sceneDepth * 2.0 - 1.0);
+        maxDist = min(maxDist, max(length(sceneHit - uCameraPos) - 0.35, 0.0));
+    }
+    if (maxDist <= 0.05) {
+        FragColor = vec4(0.0);
+        return;
+    }
+
     vec3 accum = vec3(0.0);
     float transmittance = 1.0;
-    float maxDist = 60.0;
     float stepLen = maxDist / float(STEPS);
     float strength = uStrength * 0.22;
+    float jitter = hash31(vec3(vUV * 173.31, uTime * 0.17));
 
     for (int i = 0; i < STEPS; ++i) {
-        float t = (float(i) + 0.5) * stepLen;
+        float t = (float(i) + jitter) * stepLen;
         vec3 p = uCameraPos + rayDir * t;
 
         float density = mediaDensity(p);

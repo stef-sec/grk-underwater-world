@@ -73,8 +73,8 @@ float terrainHeight(float x, float z, float time) {
 }
 
 void buildTerrain(TerrainGPU &terrain) {
-    constexpr int gridX = 180;
-    constexpr int gridZ = 140;
+    constexpr int gridX = 240;
+    constexpr int gridZ = 190;
     const float cellW = kTerrainWidth / static_cast<float>(gridX - 1);
     const float cellD = kTerrainDepth / static_cast<float>(gridZ - 1);
 

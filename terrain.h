@@ -9,8 +9,8 @@ struct TerrainGPU {
     GLuint indexCount = 0;
 };
 
-constexpr float kTerrainWidth = 60.0f;
-constexpr float kTerrainDepth = 48.0f;
+constexpr float kTerrainWidth = 96.0f;
+constexpr float kTerrainDepth = 76.0f;
 
 float terrainHeight(float x, float z, float time);
 void buildTerrain(TerrainGPU &terrain);

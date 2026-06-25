@@ -21,8 +21,13 @@ struct VolumetricGPU {
     GLint uSpotInner = -1;
     GLint uSpotOuter = -1;
     GLint uSpotIntensity = -1;
+    GLint uSceneDepth = -1;
+    GLuint depthTexture = 0;
+    int depthWidth = 0;
+    int depthHeight = 0;
 };
 
 void initVolumetric(VolumetricGPU &vol);
+void captureVolumetricDepth(VolumetricGPU &vol, int width, int height);
 void drawVolumetric(const VolumetricGPU &vol, const Mat4 &invViewProj, Vec3 cameraPos, float waterLevel, float fogDensity, float strength, float time, Vec3 moonDir, Vec3 moonColor, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity);
 void destroyVolumetric(VolumetricGPU &vol);

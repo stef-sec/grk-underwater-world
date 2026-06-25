@@ -4,6 +4,7 @@
 
 #include "water.h"
 #include "gl_loader.h"
+#include "terrain.h"
 
 #include <vector>
 
@@ -12,10 +13,10 @@ struct WaterVertex {
 };
 
 void buildWater(WaterGPU &water) {
-    constexpr int gridX = 160;
-    constexpr int gridZ = 128;
-    constexpr float halfW = 30.0f;
-    constexpr float halfD = 24.0f;
+    constexpr int gridX = 220;
+    constexpr int gridZ = 176;
+    constexpr float halfW = kTerrainWidth * 0.5f;
+    constexpr float halfD = kTerrainDepth * 0.5f;
 
     std::vector<WaterVertex> vertices;
     vertices.reserve((gridX - 1) * (gridZ - 1) * 6);

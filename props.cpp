@@ -185,7 +185,7 @@ static void scatterInstances(SeaweedGPU &seaweed, float waterLevel) {
         const float scale = 1.15f + hash2i(i + 13, i + 17) * 0.45f;
         const float rot = hash2i(i + 19, i + 23) * 6.2831853f;
         const float y = ground - seaweed.minY * scale;
-        seaweed.instances.push_back(SeaweedInstance{x, y, z, scale, rot});
+        seaweed.instances.push_back(SeaweedInstance{x, y, z, scale, rot, false});
         ++placed;
     }
 }
@@ -228,7 +228,7 @@ void initSeaweed(SeaweedGPU &seaweed, float waterLevel) {
     seaweed.loaded = true;
 }
 
-void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure) {
+void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure, int highlightedIndex) {
     if (!seaweed.loaded || seaweed.instances.empty()) return;
 
     glDisable(kGL_CULL_FACE);
@@ -247,11 +247,18 @@ void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, fl
     glUniform1f_(seaweed.uSpotIntensity, spotIntensity);
     glUniform1f_(seaweed.uExposure, exposure);
     glBindVertexArray_(seaweed.vao);
-    for (const SeaweedInstance &inst : seaweed.instances) {
+    for (size_t i = 0; i < seaweed.instances.size(); ++i) {
+        const SeaweedInstance &inst = seaweed.instances[i];
         const Mat4 model = mat4Model({inst.x, inst.y, inst.z}, inst.rotY, inst.scale);
         glUniformMatrix4fv_(seaweed.uModel, 1, 0, model.m);
         const float tint = 0.85f + hash2i(static_cast<int>(inst.x * 17.0f), static_cast<int>(inst.z * 23.0f)) * 0.15f;
-        glUniform3f_(seaweed.uColor, 0.08f * tint, 0.42f * tint, 0.18f * tint);
+        if (inst.collected) {
+            glUniform3f_(seaweed.uColor, 0.04f * tint, 0.18f * tint, 0.30f * tint);
+        } else if (static_cast<int>(i) == highlightedIndex) {
+            glUniform3f_(seaweed.uColor, 0.42f * tint, 0.78f * tint, 0.20f * tint);
+        } else {
+            glUniform3f_(seaweed.uColor, 0.08f * tint, 0.42f * tint, 0.18f * tint);
+        }
         glDrawArrays(kGL_TRIANGLES, 0, static_cast<GLsizei>(seaweed.count));
     }
     glBindVertexArray_(0);

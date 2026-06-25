@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <algorithm>
+#include <vector>
 
 #include "camera.h"
 #include "fish.h"
@@ -31,7 +33,7 @@ static constexpr float kCameraClearance = 0.6f;
 static constexpr float kMoveSpeed = 9.0f;
 static constexpr float kVerticalSpeed = 6.0f;
 static constexpr float kTurnSpeed = 1.6f;
-static constexpr float kSurfaceClearance = 0.45f;
+static constexpr float kSurfaceClearance = -1.1f;
 static constexpr float kSubmarineScale = 0.018f;
 
 static HDC g_hdc = nullptr;
@@ -50,6 +52,8 @@ static VolumetricGPU g_volumetric;
 
 static GLuint g_terrainProgram = 0;
 static GLuint g_waterProgram = 0;
+static GLuint g_sandNormalMap = 0;
+static GLuint g_rockNormalMap = 0;
 
 static GLint g_uTerrainViewProj = -1;
 static GLint g_uTerrainLightVP = -1;
@@ -70,6 +74,8 @@ static GLint g_uTerrainRockMetallic = -1;
 static GLint g_uTerrainRockRoughness = -1;
 static GLint g_uTerrainNormalStrength = -1;
 static GLint g_uTerrainDebugMaterials = -1;
+static GLint g_uTerrainSandNormalMap = -1;
+static GLint g_uTerrainRockNormalMap = -1;
 static GLint g_uTerrainSpotPos = -1;
 static GLint g_uTerrainSpotDir = -1;
 static GLint g_uTerrainSpotColor = -1;
@@ -113,6 +119,8 @@ static bool g_debugMaterials = false;
 static bool g_spotlightEnabled = true;
 static bool g_thirdPerson = false;
 static float g_volumetricStrength = 2.0f;
+static int g_highlightedSeaweed = -1;
+static int g_collectedSeaweedSamples = 0;
 
 static constexpr float kChaseDistance = 5.5f;
 
@@ -146,6 +154,53 @@ static SceneLighting computeSceneLighting() {
         l.clearColor = {0.003f, 0.006f, 0.01f};
     }
     return l;
+}
+
+static unsigned char encodeNormal(float v) {
+    return static_cast<unsigned char>(clampf(v * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f + 0.5f);
+}
+
+static GLuint createTerrainNormalMap(bool rock) {
+    constexpr int size = 128;
+    std::vector<unsigned char> pixels(static_cast<size_t>(size * size * 3));
+
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const float u = static_cast<float>(x) / static_cast<float>(size);
+            const float v = static_cast<float>(y) / static_cast<float>(size);
+
+            float nx = 0.0f;
+            float ny = 0.0f;
+            if (rock) {
+                nx = std::sin(u * 42.0f + std::cos(v * 19.0f) * 2.4f) * 0.42f;
+                ny = std::cos(v * 38.0f + std::sin(u * 17.0f) * 2.0f) * 0.40f;
+                nx += std::sin((u + v) * 85.0f) * 0.12f;
+                ny += std::cos((u - v) * 73.0f) * 0.10f;
+            } else {
+                nx = std::sin(u * 28.0f + v * 11.0f) * 0.18f;
+                ny = std::cos(v * 31.0f - u * 8.0f) * 0.16f;
+                nx += std::sin((u + v) * 55.0f) * 0.05f;
+                ny += std::cos((u - v) * 49.0f) * 0.04f;
+            }
+
+            const float z = std::sqrt(std::max(0.08f, 1.0f - nx * nx - ny * ny));
+            const size_t idx = static_cast<size_t>((y * size + x) * 3);
+            pixels[idx + 0] = encodeNormal(nx);
+            pixels[idx + 1] = encodeNormal(ny);
+            pixels[idx + 2] = encodeNormal(z);
+        }
+    }
+
+    GLuint tex = 0;
+    glGenTextures_(1, &tex);
+    glBindTexture_(kGL_TEXTURE_2D, tex);
+    glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_MIN_FILTER, kGL_LINEAR);
+    glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_MAG_FILTER, kGL_LINEAR);
+    glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri_(kGL_TEXTURE_2D, kGL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexImage2D_(kGL_TEXTURE_2D, 0, GL_RGB, size, size, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+    glBindTexture_(kGL_TEXTURE_2D, 0);
+    return tex;
 }
 
 static constexpr float kChaseHeight = 2.4f;
@@ -191,6 +246,37 @@ static void setThirdPersonMode(bool enabled) {
     g_thirdPerson = enabled;
 }
 
+static int findNearestSeaweedSample(Vec3 pos, float maxDistance) {
+    if (!g_seaweed.loaded) return -1;
+
+    int nearest = -1;
+    float bestDist2 = maxDistance * maxDistance;
+    for (size_t i = 0; i < g_seaweed.instances.size(); ++i) {
+        const SeaweedInstance &inst = g_seaweed.instances[i];
+        if (inst.collected) continue;
+
+        const float dx = inst.x - pos.x;
+        const float dy = inst.y - pos.y;
+        const float dz = inst.z - pos.z;
+        const float dist2 = dx * dx + dy * dy * 0.35f + dz * dz;
+        if (dist2 < bestDist2) {
+            bestDist2 = dist2;
+            nearest = static_cast<int>(i);
+        }
+    }
+    return nearest;
+}
+
+static void collectNearestSeaweedSample() {
+    const Vec3 subPos = submarineWorldPos(g_camera);
+    const int nearest = findNearestSeaweedSample(subPos, 5.0f);
+    g_highlightedSeaweed = nearest;
+    if (nearest < 0) return;
+
+    g_seaweed.instances[static_cast<size_t>(nearest)].collected = true;
+    ++g_collectedSeaweedSamples;
+}
+
 static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
     const Vec3 forward = cameraForward(g_camera);
     if (!g_thirdPerson) {
@@ -207,9 +293,10 @@ static void buildViewCamera(const Vec3 &subPos, Vec3 &outEye, Vec3 &outTarget) {
 static void updateWindowTitle() {
     char title[512];
     snprintf(title, sizeof(title),
-        "GRK Underwater World | %s | %s | Vol=%.1f (Y/U) | L torch | T view | P fish (%s)",
+        "GRK Underwater World | %s | %s | Samples=%d (G) | Vol=%.1f (Y/U) | L torch | T view | P fish (%s)",
         g_thirdPerson ? "3rd person" : "1st person",
         g_spotlightEnabled ? "torch ON" : "torch OFF",
+        g_collectedSeaweedSamples,
         g_volumetricStrength,
         fishDisplayModeLabel(g_fish.displayMode));
     SetWindowTextA(g_hwnd, title);
@@ -236,6 +323,8 @@ static void initPrograms() {
     g_uTerrainRockRoughness = glGetUniformLocation_(g_terrainProgram, "uRockRoughness");
     g_uTerrainNormalStrength = glGetUniformLocation_(g_terrainProgram, "uNormalStrength");
     g_uTerrainDebugMaterials = glGetUniformLocation_(g_terrainProgram, "uDebugMaterials");
+    g_uTerrainSandNormalMap = glGetUniformLocation_(g_terrainProgram, "uSandNormalMap");
+    g_uTerrainRockNormalMap = glGetUniformLocation_(g_terrainProgram, "uRockNormalMap");
     g_uTerrainSpotPos = glGetUniformLocation_(g_terrainProgram, "uSpotPos");
     g_uTerrainSpotDir = glGetUniformLocation_(g_terrainProgram, "uSpotDir");
     g_uTerrainSpotColor = glGetUniformLocation_(g_terrainProgram, "uSpotColor");
@@ -267,6 +356,8 @@ static void initScene() {
     initSkybox(g_skybox);
     initShadow(g_shadow, 2048);
     initPrograms();
+    g_sandNormalMap = createTerrainNormalMap(false);
+    g_rockNormalMap = createTerrainNormalMap(true);
     initSeaweed(g_seaweed, g_waterLevel);
     initSubmarine(g_submarine);
     initFish(g_fish, g_waterLevel);
@@ -364,6 +455,12 @@ static void renderFrame() {
     glUniform1f_(g_uTerrainSpotOuter, spotOuter);
     glUniform1f_(g_uTerrainSpotIntensity, spotIntensity);
     glUniform1f_(g_uTerrainExposure, scene.exposure);
+    glActiveTexture_(kGL_TEXTURE0 + 2);
+    glBindTexture_(kGL_TEXTURE_2D, g_sandNormalMap);
+    glUniform1i_(g_uTerrainSandNormalMap, 2);
+    glActiveTexture_(kGL_TEXTURE0 + 3);
+    glBindTexture_(kGL_TEXTURE_2D, g_rockNormalMap);
+    glUniform1i_(g_uTerrainRockNormalMap, 3);
     glActiveTexture_(kGL_TEXTURE0);
     glBindTexture_(kGL_TEXTURE_2D, g_shadow.depthMap);
     glUniform1i_(g_uTerrainShadowMap, 0);
@@ -371,7 +468,7 @@ static void renderFrame() {
     glDrawElements_(kGL_TRIANGLES, static_cast<GLsizei>(g_terrain.indexCount), kGL_UNSIGNED_INT, nullptr);
     glBindVertexArray_(0);
 
-    drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, scene.fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure);
+    drawSeaweed(g_seaweed, vp, g_time, g_waterLevel, scene.fogDensity, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure, g_highlightedSeaweed);
 
     drawFish(g_fish, vp, g_time, eye, g_waterLevel, scene.fogDensity, kMoonLightDir, scene.moonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity, scene.exposure, scene.clearColor);
 
@@ -407,6 +504,7 @@ static void renderFrame() {
     glDepthMask(1);
     glDisable(kGL_BLEND);
 
+    captureVolumetricDepth(g_volumetric, width, height);
     drawVolumetric(g_volumetric, invViewProj, eye, g_waterLevel, scene.fogDensity, scene.volStrength, g_time, kMoonLightDir, volMoonColor, spotPos, spotDir, spotColor, spotInner, spotOuter, spotIntensity);
 
     SwapBuffers(g_hdc);
@@ -426,6 +524,9 @@ static void handleMaterialKey(WPARAM key) {
     case 'B': g_normalStrength = clampf(g_normalStrength + 0.15f, 0.0f, 3.0f); break;
     case 'V': g_normalStrength = clampf(g_normalStrength - 0.15f, 0.0f, 3.0f); break;
     case 'H': g_debugMaterials = !g_debugMaterials; break;
+    case 'G':
+        collectNearestSeaweedSample();
+        break;
     case 'T':
         setThirdPersonMode(!g_thirdPerson);
         break;
@@ -547,6 +648,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     if (g_terrainProgram) glDeleteProgram_(g_terrainProgram);
     if (g_waterProgram) glDeleteProgram_(g_waterProgram);
+    if (g_sandNormalMap) glDeleteTextures_(1, &g_sandNormalMap);
+    if (g_rockNormalMap) glDeleteTextures_(1, &g_rockNormalMap);
     destroySkybox(g_skybox);
     destroyShadow(g_shadow);
     destroySeaweed(g_seaweed);

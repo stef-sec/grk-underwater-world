@@ -32,6 +32,8 @@ uniform float uNormalStrength;
 uniform float uDebugMaterials;
 uniform float uExposure;
 uniform sampler2D uShadowMap;
+uniform sampler2D uSandNormalMap;
+uniform sampler2D uRockNormalMap;
 
 out vec4 FragColor;
 
@@ -84,20 +86,9 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec3 proceduralSandNormalTS(vec2 uv) {
-    vec2 warp = vec2(sin(uv.x * 0.17 + uv.y * 0.13), cos(uv.y * 0.19 - uv.x * 0.11)) * 1.8;
-    vec2 p = (uv + warp) * 0.65;
-    float nx = sin(p.x * 2.1 + p.y * 1.7) * 0.35 + cos(p.y * 1.9) * 0.22;
-    float nz = cos(p.x * 1.8 - p.y * 1.5) * 0.30 + sin(p.y * 2.3) * 0.18;
-    return normalize(vec3(nx, 1.0, nz));
-}
-
-vec3 proceduralRockNormalTS(vec2 uv) {
-    vec2 warp = vec2(cos(uv.x * 0.11), sin(uv.y * 0.15 + uv.x * 0.07)) * 2.2;
-    vec2 p = (uv + warp) * 0.42;
-    float nx = sin(p.x * 3.4 + p.y * 2.1) * 0.42 + cos(p.y * 2.8) * 0.28;
-    float nz = sin(p.y * 3.1 + p.x * 0.9) * 0.38;
-    return normalize(vec3(nx, 1.0, nz));
+vec3 sampleNormalMapTS(sampler2D normalMap, vec2 uv) {
+    vec3 n = texture(normalMap, uv).xyz * 2.0 - 1.0;
+    return normalize(n);
 }
 
 vec3 evaluatePBR(vec3 N, vec3 V, vec3 L, vec3 baseColor, float metallic, float roughness, float shadow) {
@@ -141,8 +132,8 @@ void main() {
 
     mat3 tbn = mat3(normalize(vTangent), normalize(vBitangent), normalize(vNormalWs));
     vec2 uv = vWorldPos.xz;
-    vec3 sandNts = proceduralSandNormalTS(uv);
-    vec3 rockNts = proceduralRockNormalTS(uv);
+    vec3 sandNts = sampleNormalMapTS(uSandNormalMap, uv * 0.18);
+    vec3 rockNts = sampleNormalMapTS(uRockNormalMap, uv * 0.30);
     vec3 Nts = normalize(mix(rockNts, sandNts, sandMask));
     Nts = normalize(vec3(Nts.xy * uNormalStrength, max(Nts.z, 0.15)));
     vec3 N = normalize(tbn * Nts);
