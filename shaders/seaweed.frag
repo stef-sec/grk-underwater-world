@@ -33,6 +33,7 @@ void main() {
     vec3 lit = uColor * (0.03 + diffuse * 0.35);
     lit += uSpotColor * spot * 0.12;
     lit = mix(lit, uDeepColor, fog * 0.92);
-    lit = mix(lit, vec3(0.04, 0.14, 0.20), depthFactor * 0.35);
+    lit = mix(lit, vec3(0.035, 0.135, 0.205), depthFactor * 0.42);
+    lit = mix(lit, vec3(lit.r * 0.70, lit.g * 0.95, lit.b * 1.15), depthFactor * 0.45);
     FragColor = vec4(lit * uExposure, 1.0);
 }

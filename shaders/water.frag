@@ -39,9 +39,9 @@ void main() {
     float trough = smoothstep(-0.28, -0.06, -vWave);
     float foam = smoothstep(0.22, 0.55, vSteepness) * smoothstep(0.08, 0.25, vWave);
 
-    vec3 deepWater = vec3(0.02, 0.08, 0.14);
-    vec3 midWater = vec3(0.04, 0.16, 0.24);
-    vec3 shallow = vec3(0.08, 0.28, 0.36);
+    vec3 deepWater = vec3(0.012, 0.055, 0.105);
+    vec3 midWater = vec3(0.035, 0.145, 0.235);
+    vec3 shallow = vec3(0.075, 0.255, 0.35);
     vec3 moonTint = uLightColor * 0.35;
 
     vec3 color = mix(deepWater, midWater, crest * 0.7 + diffuse * 0.3);
@@ -57,10 +57,12 @@ void main() {
     vec3 spotDir = normalize(lightToFrag);
     float theta = dot(spotDir, normalize(uSpotDir));
     float cone = clamp((theta - uSpotOuter) / max(uSpotInner - uSpotOuter, 0.0001), 0.0, 1.0);
+    float halo = smoothstep(uSpotOuter - 0.16, uSpotOuter, theta);
+    cone = smoothstep(0.0, 1.0, cone);
     float attenuation = 1.0 / (1.0 + 0.045 * dist + 0.02 * dist * dist);
     float spot = cone * attenuation * uSpotIntensity;
     float spotSpec = pow(max(dot(reflect(-normalize(uSpotPos - vWorldPos), N), V), 0.0), 90.0);
-    color += uSpotColor * (spot * 0.06 + spotSpec * spot * 0.15);
+    color += uSpotColor * (spot * 0.055 + spotSpec * spot * 0.12 + halo * attenuation * uSpotIntensity * 0.012);
 
     float alpha = mix(0.38, 0.55, fresnel);
     if (uWaterCameraY < uWaterSurfaceLevel) {
@@ -68,5 +70,6 @@ void main() {
         alpha = mix(0.46, 0.62, fresnel);
     }
 
+    color = mix(color, vec3(color.r * 0.72, color.g * 0.96, color.b * 1.12), 0.42);
     FragColor = vec4(color * uExposure, alpha);
 }

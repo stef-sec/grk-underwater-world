@@ -173,14 +173,17 @@ void main() {
     float depthFog = 1.0 - exp(-uFogDensity * waterDepth * waterDepth * 18.0);
     float fog = clamp(max(viewFog, depthFog), 0.0, 1.0);
 
-    vec3 waterScatter = mix(vec3(0.04, 0.14, 0.22), vec3(0.01, 0.05, 0.10), waterDepth);
+    vec3 waterScatter = mix(vec3(0.035, 0.135, 0.225), vec3(0.008, 0.040, 0.085), waterDepth);
     lit = mix(lit, uDeepColor, fog * 0.9);
     lit = mix(lit, waterScatter, clamp(waterDepth * 0.55, 0.0, 1.0));
 
     vec2 causticUV = vWorldPos.xz - L.xz * vWorldPos.y * 0.18;
-    float caustic = causticLayer(causticUV, uTime, 0.55, vec2(0.08, 0.06));
-    caustic = smoothstep(0.85, 1.35, caustic);
-    lit += caustic * (1.0 - waterDepth) * (1.0 - fog) * shadow * 0.022;
+    float causticA = causticLayer(causticUV, uTime, 0.55, vec2(0.08, 0.06));
+    float causticB = causticLayer(causticUV + vec2(7.3, -3.8), uTime * 1.17, 0.82, vec2(-0.06, 0.09));
+    float caustic = smoothstep(0.82, 1.28, causticA) * 0.65 + smoothstep(0.88, 1.34, causticB) * 0.45;
+    float moonPower = clamp(dot(uLightColor, vec3(0.30, 0.59, 0.11)) * 2.2, 0.0, 1.0);
+    lit += caustic * (1.0 - waterDepth * 0.55) * (1.0 - fog * 0.65) * shadow * moonPower * vec3(0.12, 0.18, 0.30);
 
+    lit = mix(lit, vec3(lit.r * 0.72, lit.g * 0.96, lit.b * 1.16), clamp(waterDepth * 0.65 + fog * 0.22, 0.0, 0.78));
     FragColor = vec4(lit * uExposure, 1.0);
 }
