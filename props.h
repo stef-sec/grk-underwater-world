@@ -9,6 +9,7 @@ struct SeaweedInstance {
     float x, y, z;
     float scale;
     float rotY;
+    bool collected = false;
 };
 
 struct SeaweedGPU {
@@ -39,5 +40,5 @@ struct SeaweedGPU {
 };
 
 void initSeaweed(SeaweedGPU &seaweed, float waterLevel);
-void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure);
+void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, float waterLevel, float fogDensity, Vec3 spotPos, Vec3 spotDir, Vec3 spotColor, float spotInner, float spotOuter, float spotIntensity, float exposure, int highlightedIndex);
 void destroySeaweed(SeaweedGPU &seaweed);
