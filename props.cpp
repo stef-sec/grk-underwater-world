@@ -264,12 +264,11 @@ void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, fl
     glBindVertexArray_(seaweed.vao);
     for (size_t i = 0; i < seaweed.instances.size(); ++i) {
         const SeaweedInstance &inst = seaweed.instances[i];
+        if (inst.collected) continue;
         const Mat4 model = mat4Model({inst.x, inst.y, inst.z}, inst.rotY, inst.scale);
         glUniformMatrix4fv_(seaweed.uModel, 1, 0, model.m);
         const float tint = 0.85f + hash2i(static_cast<int>(inst.x * 17.0f), static_cast<int>(inst.z * 23.0f)) * 0.15f;
-        if (inst.collected) {
-            glUniform3f_(seaweed.uColor, 0.04f * tint, 0.18f * tint, 0.30f * tint);
-        } else if (static_cast<int>(i) == highlightedIndex) {
+        if (static_cast<int>(i) == highlightedIndex) {
             glUniform3f_(seaweed.uColor, 0.42f * tint, 0.78f * tint, 0.20f * tint);
         } else {
             glUniform3f_(seaweed.uColor, 0.08f * tint, 0.42f * tint, 0.18f * tint);

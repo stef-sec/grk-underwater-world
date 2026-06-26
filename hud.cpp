@@ -163,18 +163,18 @@ void drawHud(HudGPU &hud, int width, int height, bool thirdPerson, bool spotligh
         std::snprintf(status, sizeof(status),
             "GRK UNDERWATER WORLD\n"
             "VIEW: %s | SPOTLIGHT: %s | VOLUMETRIC: %s %.1f\n"
-            "SEAWEED: %d/%d\n"
+            "SEAWEED: %d/%d (%d LEFT ON MAP)\n"
             "WASD MOVE, ARROWS TURN, Q/E VERTICAL, T VIEW, L/F1 LIGHT, O SHAFTS, Y/U STRENGTH, G COLLECT, C RESET, F2 HUD",
             thirdPerson ? "3RD PERSON" : "1ST PERSON",
             spotlightEnabled ? "ON" : "OFF",
             volumetricEnabled ? "ON" : "OFF",
             volumetricStrength,
             collectedSamples,
-            totalSamples);
+            totalSamples,
+            totalSamples - collectedSamples);
 
         std::vector<HudVertex> vertices;
         vertices.reserve(32000);
-        pushQuadNdc(vertices, 10.0f, 10.0f, sw - 20.0f, 96.0f, sw, sh, 0.02f, 0.12f, 0.28f, 0.82f);
         pushTextNdc(vertices, status, 18.0f, 18.0f, 2.0f, sw, sh, 0.85f, 0.95f, 1.0f, 1.0f);
 
         glBindVertexArray_(hud.vao);
