@@ -280,24 +280,38 @@ void drawSeaweed(const SeaweedGPU &seaweed, const Mat4 &viewProj, float time, fl
 }
 
 static std::vector<PropVertex> buildRockMesh() {
-    constexpr int rings = 6;
-    constexpr int segments = 14;
+    constexpr int rings = 7;
+    constexpr int segments = 13;
     constexpr float pi = 3.14159265f;
 
     auto rockPoint = [](int r, int s) -> Vec3 {
+        static const float yLevels[rings] = {-0.04f, 0.08f, 0.24f, 0.43f, 0.60f, 0.73f, 0.80f};
+        static const float radii[rings] = {1.02f, 1.08f, 0.96f, 0.80f, 0.56f, 0.34f, 0.10f};
         const float t = static_cast<float>(r) / static_cast<float>(rings - 1);
         const float a = static_cast<float>(s) / static_cast<float>(segments) * 2.0f * pi;
-        const float radius = std::sqrt(std::max(0.02f, 1.0f - t * t));
-        const float lump = 0.88f + 0.12f * std::sin(a * 3.0f + t * 5.7f) + 0.06f * std::cos(a * 5.0f - t * 3.1f);
-        return {std::cos(a) * radius * lump, t * 0.82f, std::sin(a) * radius * lump * 0.72f};
+        const float lump =
+            1.0f +
+            0.18f * std::sin(a * 2.0f + t * 5.7f) +
+            0.11f * std::cos(a * 5.0f - t * 4.1f) +
+            0.07f * std::sin(a * 8.0f + static_cast<float>(r) * 1.9f);
+        const float sideFlatten = 0.78f + 0.10f * std::sin(t * 6.2f + 0.7f);
+        const float skewX = (t - 0.35f) * 0.16f;
+        const float skewZ = std::sin(t * 3.4f) * 0.09f;
+        return {
+            std::cos(a) * radii[r] * lump + skewX,
+            yLevels[r],
+            std::sin(a) * radii[r] * lump * sideFlatten + skewZ
+        };
     };
 
     std::vector<PropVertex> vertices;
     vertices.reserve(static_cast<size_t>((rings - 1) * segments * 6 + segments * 3));
 
-    auto pushVertex = [&](Vec3 p) {
-        Vec3 n = vec3Normalize({p.x, p.y * 0.75f + 0.22f, p.z});
-        vertices.push_back(PropVertex{p.x, p.y, p.z, n.x, n.y, n.z});
+    auto pushTri = [&](Vec3 a, Vec3 b, Vec3 c) {
+        Vec3 n = vec3Normalize(vec3Cross(vec3Subtract(b, a), vec3Subtract(c, a)));
+        vertices.push_back(PropVertex{a.x, a.y, a.z, n.x, n.y, n.z});
+        vertices.push_back(PropVertex{b.x, b.y, b.z, n.x, n.y, n.z});
+        vertices.push_back(PropVertex{c.x, c.y, c.z, n.x, n.y, n.z});
     };
 
     for (int r = 0; r < rings - 1; ++r) {
@@ -307,12 +321,8 @@ static std::vector<PropVertex> buildRockMesh() {
             Vec3 p10 = rockPoint(r + 1, s);
             Vec3 p01 = rockPoint(r, sn);
             Vec3 p11 = rockPoint(r + 1, sn);
-            pushVertex(p00);
-            pushVertex(p10);
-            pushVertex(p01);
-            pushVertex(p01);
-            pushVertex(p10);
-            pushVertex(p11);
+            pushTri(p00, p10, p01);
+            pushTri(p01, p10, p11);
         }
     }
 
